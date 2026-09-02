@@ -1,3 +1,5 @@
 node_modules
-target-repos
+target-repos/*
+!target-repos/vuln-fixture
 callgraphs
+vulnerabilities-*.json
