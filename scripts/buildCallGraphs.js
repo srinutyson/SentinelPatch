@@ -75,15 +75,31 @@ function resolveModulePath(fromDir , importPath){
   function discoveryEntryPoints(mainFilePath){
        return getLocalImports(mainFilePath);
   }
+  
+  function loadVulnerablePackages(reponame){
+     const reportPath = path.join(__dirname , '..' , `vulnerabilities-${reponame}.json`);
+     if(!fs.existsSync(reportPath)){
+        console.warn(`No vulnerability report found at ${reportPath} — run: node scripts/queryVulnerabilities.js ${reponame}`);
+        return [];
+     }
+     const report = JSON.parse(fs.readFileSync(reportPath , 'utf-8'));
+     const names = report
+                   .filter((dep)=> dep.vulnerabilities && dep.vulnerabilities.length >0)
+                   .map((dep)=> dp.name);
+     return [...new Set(names)]
+  }
 
-  function runJellyOnFile(filePath , outputName , heapSizeMB = 4096){
+  function runJellyOnFile(filePath , outputName ,{ heapSizeMB = 4096 , includeOnly = null} = {}){
          const jsonOut = path.join(__dirname , '..' ,'callgraphs' , `${outputName}.json`);
          const htmlOut = path.join(__dirname , '..' , 'callgraphs' , `${outputName}.html`);
-
-
+         const args = ['-j' , jsonOut , '-m' , htmlOut];
+         if(includeOnly && includeOnly.length > 0){
+             args.push('--include-packages' , ...includeOnly);
+         }
+         args.push(filePath)
          const result = spawnSync(
              'jelly' ,
-             ['-j' , jsonOut , '-m' , htmlOut , filePath],
+              args,
              {
                 env :{
                      ...process.env,
@@ -100,7 +116,7 @@ function resolveModulePath(fromDir , importPath){
          };
   }
 
-  function processEntryPoint(filePath , results = [] , visited = new Set() , depth = 0){
+  function processEntryPoint(reponame , filePath , results = [] , visited = new Set() , depth = 0){
       if(visited.has(filePath) || depth > 5){
          return results;
       }
@@ -111,8 +127,8 @@ function resolveModulePath(fromDir , importPath){
                          .replace(/[\\/]/g , '__')
                          .replace(/\.js$/ , '');
       console.log(`${' '.repeat(depth)}Analyzing: ${filePath}`);
-      const {success , error} = runJellyOnFile(filePath , outputName);
-      if(success){
+      const first  = runJellyOnFile(filePath , outputName);
+      if(first.success){
           console.log(`${' '.repeat(depth)} ✅ succeeded`);
           results.push({filePath , outputName , status : 'success'});
           return results;
@@ -122,36 +138,50 @@ function resolveModulePath(fromDir , importPath){
        const localImports = getLocalImports(filePath);
 
        if(localImports.length === 0){
-         console.log(`${'  '.repeat(depth)}  no further local imports to split — leaving as unresolved leaf`);
-         results.push({ filePath, outputName, status: 'failed', error });
+         console.log(`${'  '.repeat(depth)}  no further local imports to split — retrying scoped to known-vulnerable packages only`);
+
+         const vulnerablePackages = loadVulnerablePackages(reponame);
+         if(vulnerablePackages.length > 0){
+             const scoped = runJellyOnFile(filePath , outputName , {includeOnly : vulnerablePackages});
+             if(scoped.success){
+                 console.log(`${'  '.repeat(depth)}  ✅ succeeded (scoped to: ${vulnerablePackages.join(', ')})`);
+                 results.push({filePath , outputName , status : 'success' , scopedTo : vulnerablePackages});
+                 return results;
+                }
+             console.log(`${'  '.repeat(depth)}  ❌ still failed even scoped to vulnerable packages only`);
+             results.push({ filePath, outputName, status: 'failed', error: scoped.error });
+             return results;
+         }
+         console.log(`${'  '.repeat(depth)}  no known-vulnerable packages found — leaving as unresolved leaf`);
+         results.push({ filePath, outputName, status: 'failed', error: first.error });
          return results;
        }
 
        for(const importedFile of localImports){
-          processEntryPoint(importedFile , results , visited , depth+1);
+          processEntryPoint(reponame,importedFile , results , visited , depth+1);
        }
 
        return results;
   }
 
-  function buildAllCallGraphs(mainFilePath){
+  function buildAllCallGraphs(mainFilePath,reponame){
       const entryPoints = discoveryEntryPoints(mainFilePath);
       console.log(`Discovered ${entryPoints.length} initial entry points from ${mainFilePath}`);
-
+     
 
       const results = [];
        const visited = new Set();
 
       for(const entryPoint of entryPoints){
-          processEntryPoint(entryPoint , results,visited);
+          processEntryPoint(reponame , entryPoint , results,visited);
       }
 
       return results;
   }
+ const reponame = process.argv[2] || 'hackathon-starter';
+ const mainFile = path.join(__dirname , '..' , 'target-repos' , reponame , 'app.js');
 
-  const mainFile = path.join(__dirname , '..' , 'target-repos' , 'hackathon-starter' , 'app.js');
-   
-  const results = buildAllCallGraphs(mainFile);
+  const results = buildAllCallGraphs(mainFile,reponame);
 
    console.log('\n--- Summary ---');
    console.log(`Succeeded: ${results.filter((r) => r.status === 'success').length}`);

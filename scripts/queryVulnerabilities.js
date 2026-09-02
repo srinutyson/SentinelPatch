@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { getDependencies } from "./extractDependencies.js";
 
 
@@ -41,7 +44,7 @@ function simplifyvulns(vuln){
       };
 }
 
-async function checkDependencies(reponame){
+export async function checkDependencies(reponame){
     const dependencies = getDependencies(reponame);
     const results = [];
 
@@ -63,3 +66,16 @@ async function checkDependencies(reponame){
      return results;
 }
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+async function writeVulnerabilityReport(reponame){
+      const results = await checkDependencies(reponame);
+      const outPath = path.join(__dirname , '..' , `vulnerabilities-${reponame}.json`);
+      fs.writeFileSync(outPath , JSON.stringify(results , null , 2));
+       console.log(`Wrote vulnerability report for ${reponame} to ${outPath}`);
+       return results;
+}
+
+
+const reponame = process.argv[2] || 'hackathon-starter';
+await writeVulnerabilityReport(reponame);
