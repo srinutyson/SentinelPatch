@@ -16,6 +16,20 @@ export function getVulnerablePackageFileIndices(callGraph , packageName){
 }
 
 
+export function getFunctionsInFiles(callGraph , fileIndices){
+    const matchedFuncIds = new Set();
+     const entries =  Object.entries(callGraph.functions);
+     for(const [funcId ,locationString] of entries){
+        const [fileIndxStr] = locationString.split(':');
+        const fileIdx = Number(fileIndxStr);
 
+        if(fileIndices.has(fileIdx)){
+             matchedFuncIds.add(funcId);
+        }
+
+     }
+     return matchedFuncIds;
+     
+}
 
 
