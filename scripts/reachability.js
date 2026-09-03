@@ -46,3 +46,14 @@ export function getFileIndicesForPaths(callGraph, paths){
 }
 
 
+export function buildAdjacencyMap(fun2fun){
+        const adjacencyMap = new Map();
+        for(const [caller , callee] of fun2fun){
+            if(!adjacencyMap.has(caller)){
+                adjacencyMap.set(caller , []);
+            }
+            adjacencyMap.get(caller).push(callee);
+        }
+        return adjacencyMap;
+}
+
