@@ -85,7 +85,7 @@ function resolveModulePath(fromDir , importPath){
      const report = JSON.parse(fs.readFileSync(reportPath , 'utf-8'));
      const names = report
                    .filter((dep)=> dep.vulnerabilities && dep.vulnerabilities.length >0)
-                   .map((dep)=> dp.name);
+                   .map((dep)=> dep.name);
      return [...new Set(names)]
   }
 
