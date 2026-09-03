@@ -142,7 +142,7 @@ function resolveModulePath(fromDir , importPath){
 
          const vulnerablePackages = loadVulnerablePackages(reponame);
          if(vulnerablePackages.length > 0){
-             const scoped = runJellyOnFile(filePath , outputName , {includeOnly : vulnerablePackages});
+             const scoped = runJellyOnFile(filePath , outputName , {includeOnly : vulnerablePackages , heapSizeMB : 6144,});
              if(scoped.success){
                  console.log(`${'  '.repeat(depth)}  ✅ succeeded (scoped to: ${vulnerablePackages.join(', ')})`);
                  results.push({filePath , outputName , status : 'success' , scopedTo : vulnerablePackages});
