@@ -14,22 +14,62 @@ export function getDependencies(reponame){
 
         const lockJson = JSON.parse(fs.readFileSync(lockJsonPath , "utf8"));
 
-        const directDependencies = Object.keys(pkgJson.dependencies || {});
+        const directDependencies = new Set(Object.keys(pkgJson.dependencies || {}));
 
-        function resolveVersion(name){
-            if(lockJson.lockfileVersion >= 2){
-                const entry = lockJson.packages?.[`node_modules/${name}`];
-                return entry?.version || null;
-            }
-            else {
-               const entry = lockJson.dependencies?.[name];
-                return entry?.version || null;
-            }
+      
+        if(lockJson.lockfileVersion >= 2){
+               return dedupe(getAllInstalledPackages(lockJson , directDependencies));
         }
+           
+        return dedupe(walkV1Tree(lockJson.dependencies,directDependencies));
+       
 
-        return directDependencies.map((name) =>({
-            name , 
-            version: resolveVersion(name)
-        }));
         
+}
+
+ function getAllInstalledPackages(lockJson,dirNames){
+       const entries = Object.entries(lockJson.packages);
+     return  entries.filter(([key])=> key !== "").map(([key,entry])=>{
+             const lastIdx = key.lastIndexOf("node_modules/");
+             const firstIdx = key.indexOf("node_modules/");
+             const isTopLevel = lastIdx === firstIdx;
+             const name = key.slice(lastIdx + "node_modules/".length);
+             return {
+                   name ,
+                   version : entry.version || null,
+                   direct : isTopLevel && dirNames.has(name),
+
+             };
+       });
+
+}
+
+function walkV1Tree(depsObject , directNames , isToplevel = true){
+         const results = [];
+         const entries = Object.entries(depsObject || {});
+
+         for(const [name , info] of entries){
+               results.push({
+                 name,
+                 version : info.version || null , 
+                 direct : isToplevel && directNames.has(name),
+               });
+                if (info.dependencies) {
+                results.push(...walkV1Tree(info.dependencies, directNames, false));
+            }
+         }
+         return results;
+}
+
+function dedupe(packages){
+    const seen = new Set();
+    const results = [];
+
+    for(const pkg of packages){
+        const key = `${pkg.name}@${pkg.version}`;
+        if(seen.has(key))continue;
+        seen.add(key);
+        results.push(pkg);
+    }
+    return results;
 }
