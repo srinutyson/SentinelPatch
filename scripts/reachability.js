@@ -24,7 +24,7 @@ export function getFunctionsInFiles(callGraph , fileIndices){
         const fileIdx = Number(fileIndxStr);
 
         if(fileIndices.has(fileIdx)){
-             matchedFuncIds.add(funcId);
+             matchedFuncIds.add(Number(funcId));
         }
 
      }
