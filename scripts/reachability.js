@@ -57,3 +57,22 @@ export function buildAdjacencyMap(fun2fun){
         return adjacencyMap;
 }
 
+
+export function isReachable(startFuncIds , targetFuncids , adjacencyMap){
+       const queue = [...startFuncIds];
+     
+       const visited = new Set(startFuncIds);
+
+       while(queue.length > 0){
+            const current = queue.shift();
+            if(targetFuncids.has(current)) return true;
+            const callees = adjacencyMap.get(current) || [];
+            for(const callee of callees){
+                 if(visited.has(callee))continue;
+                 visited.add(callee);
+                 queue.push(callee);
+            }
+
+       }
+       return false;
+}
