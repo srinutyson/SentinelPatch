@@ -33,3 +33,16 @@ export function getFunctionsInFiles(callGraph , fileIndices){
 }
 
 
+export function getFileIndicesForPaths(callGraph, paths){
+      const pathsSet = new Set(paths);
+       const result = new Set();
+
+       callGraph.files.forEach((filePath , index)=>{
+           if(pathsSet.has(filePath)){
+             result.add(index);
+           }
+       })
+       return result;
+}
+
+
