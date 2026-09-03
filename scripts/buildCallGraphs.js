@@ -178,8 +178,92 @@ function resolveModulePath(fromDir , importPath){
 
       return results;
   }
+   function resolveExportsField(exportsValue){
+      if(!exportsValue) return null;
+
+      if(typeof exportsValue === 'string'){
+          return exportsValue;
+      }
+
+      if(typeof exportsValue !== 'object') return null;
+
+      const keys = Object.keys(exportsValue);
+      const isSubpathMap = keys.some((k)=> k.startsWith('.'));
+
+      const conditions = isSubpathMap ? exportsValue['.'] : exportsValue;
+      if(!conditions) return null;
+
+      if(typeof conditions === 'string'){
+          return conditions;
+      }
+      if(typeof conditions === 'object'){
+         return (
+              conditions.require||
+              conditions.node||
+              conditions.default||
+              conditions.import||
+              null
+         );
+      }
+      return null;
+   }
+   function getMainFile(reponame){
+      const repoPath = path.join(__dirname , '..' , 'target-repos',reponame);
+      const pkgJsonPath = path.join(repoPath , 'package.json');
+      const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath , 'utf8'));
+      const candidates = [];
+      const startCandidate = extractEntryFromStartScript(pkgJson.scripts?.start);
+      if(startCandidate) candidates.push(startCandidate); 
+      const exportsCandidate  = resolveExportsField(pkgJson.exports) ||pkgJson.main || 'index.js';
+      if(exportsCandidate) candidates.push(exportsCandidate);
+      
+       candidates.push('index.js','app.js' , 'server.js', 'main.js');
+      for(const candidate of candidates){
+           const resolved = resolveModulePath(repoPath , candidate);
+           if(resolved){
+            console.log(resolved);
+               return resolved;
+
+           } 
+      }
+
+      
+           throw new Error(
+            `Could not resolve entry file for "${reponame}" — tried "${candidate}" ` +
+            `(from package.json "exports"/"main", or the "index.js" default) but no matching file exists.`
+        );
+      
+
+      
+   }
+
+   function extractEntryFromStartScript(startScript){
+      if(!startScript) return null;
+
+      const knownRunners = new Set(['node' , 'nodemon' , 'ts-node' , 'babel-node' , 'npx']);
+      const tokens = startScript.trim().split(/\s+/);
+
+     for(let i = 0; i < tokens.length; i++) {
+        if (knownRunners.has(tokens[i])) {
+            for (let j = i + 1; j < tokens.length; j++) {
+                if (tokens[j].startsWith('-')) continue; // flag, skip it
+                return tokens[j];
+            }
+        }
+    }
+
+    for(const token of tokens) {
+        if (/\.(js|mjs|cjs)$/.test(token) || token.includes('/')) {
+            return token;
+        }
+    }
+
+
+      return null;
+   }
+  
  const reponame = process.argv[2] || 'hackathon-starter';
- const mainFile = path.join(__dirname , '..' , 'target-repos' , reponame , 'app.js');
+ const mainFile = getMainFile(reponame)
 
   const results = buildAllCallGraphs(mainFile,reponame);
 
