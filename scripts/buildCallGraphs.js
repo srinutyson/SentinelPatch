@@ -49,14 +49,14 @@ function getLocalImports(filePath){
         const resolved = localImportPaths
                            .map((importPath) => resolveModulePath(path.dirname(filePath) , importPath))
                            .filter((p) => p !== null);
-        
+
         return [...new Set(resolved)];
 }
 
 function resolveModulePath(fromDir , importPath){
       const base = path.resolve(fromDir , importPath);
       const candidates = [
-          base , 
+          base ,
           `${base}.js`,
           `${base}.mjs`,
           `${base}.cjs`,
@@ -75,7 +75,7 @@ function resolveModulePath(fromDir , importPath){
   function discoveryEntryPoints(mainFilePath){
        return getLocalImports(mainFilePath);
   }
-  
+
   function loadVulnerablePackages(reponame){
      const reportPath = path.join(__dirname , '..' , `vulnerabilities-${reponame}.json`);
      if(!fs.existsSync(reportPath)){
@@ -87,6 +87,70 @@ function resolveModulePath(fromDir , importPath){
                    .filter((dep)=> dep.vulnerabilities && dep.vulnerabilities.length >0)
                    .map((dep)=> dep.name);
      return [...new Set(names)]
+  }
+
+  function loadLockfile(reponame){
+     const lockPath = path.join(__dirname , '..' , 'target-repos' , reponame , 'package-lock.json');
+     if(!fs.existsSync(lockPath)){
+        console.warn(`No package-lock.json found for ${reponame} — skipping ancestor-package expansion`);
+        return null;
+     }
+     return JSON.parse(fs.readFileSync(lockPath , 'utf-8'));
+  }
+
+  function buildReverseDependencyMap(lockJson){
+     const reverseMap = new Map(); // depName -> Set of package names that directly require it
+
+     for(const [key, entry] of Object.entries(lockJson.packages || {})){
+        if(key === '') continue;
+        const name = key.slice(key.lastIndexOf('node_modules/') + 'node_modules/'.length);
+        const deps = entry.dependencies ? Object.keys(entry.dependencies) : [];
+        for(const dep of deps){
+           if(!reverseMap.has(dep)){
+              reverseMap.set(dep, new Set());
+           }
+           reverseMap.get(dep).add(name);
+        }
+     }
+     return reverseMap;
+  }
+
+  function getAncestorPackages(reverseMap, targetPackage){
+     const ancestors = new Set();
+     const queue = [targetPackage];
+     const seen = new Set([targetPackage]);
+
+     while(queue.length > 0){
+        const current = queue.shift();
+        const requirers = reverseMap.get(current);
+        if(!requirers) continue;
+
+        for(const requirer of requirers){
+           if(!seen.has(requirer)){
+              seen.add(requirer);
+              ancestors.add(requirer);
+              queue.push(requirer);
+           }
+        }
+     }
+     return ancestors;
+  }
+
+  function getScopedIncludeList(reponame, vulnerablePackages){
+     const lockJson = loadLockfile(reponame);
+     if(!lockJson) return vulnerablePackages;
+
+     const reverseMap = buildReverseDependencyMap(lockJson);
+     const fullSet = new Set(vulnerablePackages);
+
+     for(const pkg of vulnerablePackages){
+        const ancestors = getAncestorPackages(reverseMap, pkg);
+        for(const ancestor of ancestors){
+           fullSet.add(ancestor);
+        }
+     }
+
+     return [...fullSet];
   }
 
   function runJellyOnFile(filePath , outputName ,{ heapSizeMB = 4096 , includeOnly = null} = {}){
@@ -143,7 +207,8 @@ function resolveModulePath(fromDir , importPath){
 
     console.log(`${' '.repeat(depth)}  ❌ failed, attempting scoped retry on this file`);
 
-    const vulnerablePackages = loadVulnerablePackages(reponame);
+    const baseVulnerablePackages = loadVulnerablePackages(reponame);
+    const vulnerablePackages = getScopedIncludeList(reponame, baseVulnerablePackages);
     let ownScopedSucceeded = false;
 
     if(vulnerablePackages.length > 0){
@@ -182,12 +247,17 @@ function resolveModulePath(fromDir , importPath){
 }
 
   function buildAllCallGraphs(mainFilePath,reponame){
-      const entryPoints = discoveryEntryPoints(mainFilePath);
-      console.log(`Discovered ${entryPoints.length} initial entry points from ${mainFilePath}`);
-     
 
-      const results = [];
-       const visited = new Set();
+    const results = [];
+    const visited = new Set();
+
+    console.log(`Analyzing main entry file itself: ${mainFilePath}`);
+    processEntryPoint(reponame, mainFilePath, results, visited);
+
+    const entryPoints = discoveryEntryPoints(mainFilePath);
+    console.log(`Discovered ${entryPoints.length} initial entry points from ${mainFilePath}`);
+
+
 
       for(const entryPoint of entryPoints){
           processEntryPoint(reponame , entryPoint , results,visited);
@@ -230,10 +300,10 @@ function resolveModulePath(fromDir , importPath){
       const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath , 'utf8'));
       const candidates = [];
       const startCandidate = extractEntryFromStartScript(pkgJson.scripts?.start);
-      if(startCandidate) candidates.push(startCandidate); 
+      if(startCandidate) candidates.push(startCandidate);
       const exportsCandidate  = resolveExportsField(pkgJson.exports) ||pkgJson.main || 'index.js';
       if(exportsCandidate) candidates.push(exportsCandidate);
-      
+
        candidates.push('index.js','app.js' , 'server.js', 'main.js');
       for(const candidate of candidates){
            const resolved = resolveModulePath(repoPath , candidate);
@@ -241,17 +311,17 @@ function resolveModulePath(fromDir , importPath){
             console.log(resolved);
                return resolved;
 
-           } 
+           }
       }
 
-      
+
            throw new Error(
-            `Could not resolve entry file for "${reponame}" — tried "${candidate}" ` +
+            `Could not resolve entry file for "${reponame}" — tried "${candidates.join(', ')}" ` +
             `(from package.json "exports"/"main", or the "index.js" default) but no matching file exists.`
         );
-      
 
-      
+
+
    }
 
    function extractEntryFromStartScript(startScript){
@@ -278,7 +348,7 @@ function resolveModulePath(fromDir , importPath){
 
       return null;
    }
-  
+
  const reponame = process.argv[2] || 'hackathon-starter';
  const mainFile = getMainFile(reponame)
 

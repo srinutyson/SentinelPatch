@@ -1,3 +1,4 @@
+import { full } from 'acorn-walk';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -15,7 +16,6 @@ export function getVulnerablePackageFileIndices(callGraph , packageName){
        
 }
 
-
 export function getFunctionsInFiles(callGraph , fileIndices){
     const matchedFuncIds = new Set();
      const entries =  Object.entries(callGraph.functions);
@@ -32,7 +32,6 @@ export function getFunctionsInFiles(callGraph , fileIndices){
      
 }
 
-
 export function getFileIndicesForPaths(callGraph, paths){
       const pathsSet = new Set(paths);
        const result = new Set();
@@ -45,7 +44,6 @@ export function getFileIndicesForPaths(callGraph, paths){
        return result;
 }
 
-
 export function buildAdjacencyMap(fun2fun){
         const adjacencyMap = new Map();
         for(const [caller , callee] of fun2fun){
@@ -56,7 +54,6 @@ export function buildAdjacencyMap(fun2fun){
         }
         return adjacencyMap;
 }
-
 
 export function isReachable(startFuncIds , targetFuncIds , adjacencyMap){
        const queue = [...startFuncIds];
@@ -76,6 +73,7 @@ export function isReachable(startFuncIds , targetFuncIds , adjacencyMap){
        }
        return false;
 }
+
 export function pathReconstruction(targetFuncId,parentMap){
       const path = [targetFuncId];
       let node = targetFuncId;
@@ -108,4 +106,38 @@ export function findReachablePath(startFuncIds , targetFuncIds , adjacencyMap){
        }
        return null;
 
+}
+
+export function checkReachability(callGraphPath , packageName){
+       const callGraph  = JSON.parse(fs.readFileSync(callGraphPath , 'utf8'));
+       const vulnerableFileIndices = getVulnerablePackageFileIndices(callGraph , packageName);
+       const vulnerableFunIndices =  getFunctionsInFiles(callGraph , vulnerableFileIndices);
+       const entryFileIndices = getFileIndicesForPaths(callGraph , callGraph.entries);
+       const entryFunIndices = getFunctionsInFiles(callGraph , entryFileIndices);
+       const adjacencyMap = buildAdjacencyMap(callGraph.fun2fun);
+       const reachablePaths = findReachablePath(entryFunIndices , vulnerableFunIndices , adjacencyMap);
+       
+      return { reachable: reachablePaths !== null, path: reachablePaths };
+}
+
+export function checkReachabilityForRepo(repoName , packageName){
+
+       const __dirname = path.dirname(fileURLToPath(import.meta.url));
+       const callGraphDirectory = path.join(__dirname , '..' , 'callgraphs');
+       const callGraphsNames  = (fs.readdirSync(callGraphDirectory)).filter((callGraph)=> 
+                             callGraph.startsWith(`${repoName}__`) &&
+                             callGraph.endsWith('.json')
+                            );
+       const results =  callGraphsNames.map((filename)=>{
+                         const fullPath = path.join(callGraphDirectory , filename);
+                         const result = checkReachability(fullPath , packageName);
+
+                         return {
+                             entryPoint : filename,
+                             reachable : result.reachable,
+                             path : result.path
+                         }
+                       });
+       return results
+       
 }
