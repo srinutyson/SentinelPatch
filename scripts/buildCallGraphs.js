@@ -92,11 +92,10 @@ function resolveModulePath(fromDir , importPath){
   function runJellyOnFile(filePath , outputName ,{ heapSizeMB = 4096 , includeOnly = null} = {}){
          const jsonOut = path.join(__dirname , '..' ,'callgraphs' , `${outputName}.json`);
          const htmlOut = path.join(__dirname , '..' , 'callgraphs' , `${outputName}.html`);
-         const args = ['-j' , jsonOut , '-m' , htmlOut];
-         if(includeOnly && includeOnly.length > 0){
-             args.push('--include-packages' , ...includeOnly);
+         const args = ['-j', jsonOut, '-m', htmlOut, filePath];
+         if (includeOnly && includeOnly.length > 0) {
+            args.push('--include-packages', ...includeOnly);
          }
-         args.push(filePath)
          const result = spawnSync(
              'jelly' ,
               args,
@@ -109,60 +108,78 @@ function resolveModulePath(fromDir , importPath){
                 stdio : 'pipe',
              }
          );
-
+         const outputExists = fs.existsSync(jsonOut);
          return {
-             success : result.status === 0,
-             error : result.status !== 0 ? (result.stderr?.toString() || 'unknown error') : null,
+             success : result.status === 0 && outputExists,
+             error : result.status !== 0 ? (result.stderr?.toString() || 'unknown error') : (!outputExists ? (result.stdout?.toString() || 'jelly exited 0 but produced no output file') : null),
          };
   }
 
   function processEntryPoint(reponame , filePath , results = [] , visited = new Set() , depth = 0){
-      if(visited.has(filePath) || depth > 5){
-         return results;
-      }
+    if(visited.has(filePath)){
+        console.log(`${' '.repeat(depth)}⏭ skipping ${filePath} — already covered by another entry point's call graph`);
+        results.push({ filePath, status: 'subsumed', note: 'already covered by another entry point\'s call graph' });
+        return results;
+    }
 
-      visited.add(filePath);
+    if(depth > 5){
+        console.log(`${' '.repeat(depth)}❌ giving up on ${filePath} — max split depth (5) exceeded`);
+        results.push({ filePath, status: 'failed', error: 'max recursion depth exceeded while splitting' });
+        return results;
+    }
 
-      const outputName = path.relative(path.join(__dirname, '..' , 'target-repos') , filePath)
-                         .replace(/[\\/]/g , '__')
-                         .replace(/\.js$/ , '');
-      console.log(`${' '.repeat(depth)}Analyzing: ${filePath}`);
-      const first  = runJellyOnFile(filePath , outputName);
-      if(first.success){
-          console.log(`${' '.repeat(depth)} ✅ succeeded`);
-          results.push({filePath , outputName , status : 'success'});
-          return results;
-      }
+    visited.add(filePath);
 
-       console.log(`${' '.repeat(depth)}  ❌ failed, attempting to split further`);
-       const localImports = getLocalImports(filePath);
+    const outputName = path.relative(path.join(__dirname, '..' , 'target-repos') , filePath)
+                       .replace(/[\\/]/g , '__')
+                       .replace(/\.js$/ , '');
+    console.log(`${' '.repeat(depth)}Analyzing: ${filePath}`);
+    const first  = runJellyOnFile(filePath , outputName);
+    if(first.success){
+        console.log(`${' '.repeat(depth)} ✅ succeeded`);
+        results.push({filePath , outputName , status : 'success'});
+        return results;
+    }
 
-       if(localImports.length === 0){
-         console.log(`${'  '.repeat(depth)}  no further local imports to split — retrying scoped to known-vulnerable packages only`);
+    console.log(`${' '.repeat(depth)}  ❌ failed, attempting scoped retry on this file`);
 
-         const vulnerablePackages = loadVulnerablePackages(reponame);
-         if(vulnerablePackages.length > 0){
-             const scoped = runJellyOnFile(filePath , outputName , {includeOnly : vulnerablePackages , heapSizeMB : 6144,});
-             if(scoped.success){
-                 console.log(`${'  '.repeat(depth)}  ✅ succeeded (scoped to: ${vulnerablePackages.join(', ')})`);
-                 results.push({filePath , outputName , status : 'success' , scopedTo : vulnerablePackages});
-                 return results;
-                }
-             console.log(`${'  '.repeat(depth)}  ❌ still failed even scoped to vulnerable packages only`);
-             results.push({ filePath, outputName, status: 'failed', error: scoped.error });
-             return results;
-         }
-         console.log(`${'  '.repeat(depth)}  no known-vulnerable packages found — leaving as unresolved leaf`);
-         results.push({ filePath, outputName, status: 'failed', error: first.error });
-         return results;
-       }
+    const vulnerablePackages = loadVulnerablePackages(reponame);
+    let ownScopedSucceeded = false;
 
-       for(const importedFile of localImports){
-          processEntryPoint(reponame,importedFile , results , visited , depth+1);
-       }
+    if(vulnerablePackages.length > 0){
+        const scoped = runJellyOnFile(filePath , outputName , {includeOnly : vulnerablePackages , heapSizeMB : 6144,});
+        if(scoped.success){
+            console.log(`${'  '.repeat(depth)}  ✅ succeeded (scoped to: ${vulnerablePackages.join(', ')})`);
+            results.push({filePath , outputName , status : 'success' , scopedTo : vulnerablePackages});
+            ownScopedSucceeded = true;
+        } else {
+            console.log(`${'  '.repeat(depth)}  ❌ scoped retry on this file also failed`);
+        }
+    } else {
+        console.log(`${'  '.repeat(depth)}  no known-vulnerable packages found — skipping scoped retry`);
+    }
 
-       return results;
-  }
+    const localImports = getLocalImports(filePath);
+
+    if(localImports.length === 0){
+        if(!ownScopedSucceeded){
+            console.log(`${'  '.repeat(depth)}  no local imports to split — leaving as unresolved leaf`);
+            results.push({ filePath, outputName, status: 'failed', error: first.error });
+        }
+        return results;
+    }
+
+    if(!ownScopedSucceeded){
+        results.push({ filePath, outputName, status: 'failed', error: first.error, note: 'own scope failed — falling back to analyzing local imports separately' });
+    }
+
+    console.log(`${'  '.repeat(depth)}  also splitting into local imports for supplementary coverage`);
+    for(const importedFile of localImports){
+       processEntryPoint(reponame,importedFile , results , visited , depth+1);
+    }
+
+    return results;
+}
 
   function buildAllCallGraphs(mainFilePath,reponame){
       const entryPoints = discoveryEntryPoints(mainFilePath);
