@@ -3,3 +3,4 @@ target-repos/*
 !target-repos/vuln-fixture
 callgraphs
 vulnerabilities-*.json
+PROJECT_PLAN.md
