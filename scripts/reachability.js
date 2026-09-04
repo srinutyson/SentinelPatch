@@ -58,14 +58,14 @@ export function buildAdjacencyMap(fun2fun){
 }
 
 
-export function isReachable(startFuncIds , targetFuncids , adjacencyMap){
+export function isReachable(startFuncIds , targetFuncIds , adjacencyMap){
        const queue = [...startFuncIds];
      
        const visited = new Set(startFuncIds);
 
        while(queue.length > 0){
             const current = queue.shift();
-            if(targetFuncids.has(current)) return true;
+            if(targetFuncIds.has(current)) return true;
             const callees = adjacencyMap.get(current) || [];
             for(const callee of callees){
                  if(visited.has(callee))continue;
@@ -75,4 +75,37 @@ export function isReachable(startFuncIds , targetFuncids , adjacencyMap){
 
        }
        return false;
+}
+export function pathReconstruction(targetFuncId,parentMap){
+      const path = [targetFuncId];
+      let node = targetFuncId;
+      while(parentMap.has(node)){
+         node = parentMap.get(node);
+         path.push(node);
+      }
+      return path.reverse();
+}
+
+export function findReachablePath(startFuncIds , targetFuncIds , adjacencyMap){
+
+        const queue = [...startFuncIds];
+        const visited = new Set(startFuncIds);
+        const parentMap = new Map();
+        while(queue.length > 0){
+            const current = queue.shift();
+            if(targetFuncIds.has(current)) {
+               return pathReconstruction(current , parentMap);
+               
+            }
+            const callees = adjacencyMap.get(current) || [];
+            for(const callee of callees){
+                 if(visited.has(callee))continue;
+                 visited.add(callee);
+                 queue.push(callee);
+                 parentMap.set(callee , current);
+            }
+
+       }
+       return null;
+
 }
