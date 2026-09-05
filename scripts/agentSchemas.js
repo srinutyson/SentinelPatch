@@ -28,6 +28,16 @@ export const findingSchema = z.object({
       advisoryDetails : z.string(),
 });
 
+export const VerdictSchema = z.object({
+       cveId : z.string(),
+       verdict : z.enum(['exploitable' , 'not-exploitable' , 'insufficient-evidence']),
+       confidence : z.number().min(0).max(1),
+       reasoning : z.string(),
+       citedEvidence : z.array(z.string()),
+       line : z.number(),
+       note : z.string(),
+})
+
 export function buildFinding(repoName , vuln , packageName , packageVersion , callGraphPath , reachabilityResult){
       if(!reachabilityResult.reachable || !reachabilityResult.path){
         throw new Error(
