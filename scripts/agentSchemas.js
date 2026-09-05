@@ -115,7 +115,7 @@ export function generateFindings(repoName){
          
         for(const callGraphPath of callGraphPaths){
             for(const dep of vulnerabilities){
-                const result = checkReachability(callGraphPath,dep.name);
+                const result = checkReachability(callGraphPath,dep.name,dep.version,repoName);
                 
                 if(result.reachable){
                     console.log(`  ✅ reachable: ${dep.name} from ${path.basename(callGraphPath)}`);
