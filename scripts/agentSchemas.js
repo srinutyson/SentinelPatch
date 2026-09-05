@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { checkReachability } from './reachability.js';
-
+import { getFunctionNameAtLocation , extractAdvisoryFunctionNames } from './functionMatch.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const locationSchema = z.object({
@@ -26,6 +26,7 @@ export const findingSchema = z.object({
       locations : z.array(locationSchema),
       advisorySummary : z.string(),
       advisoryDetails : z.string(),
+      functionLevelMatch : z.boolean(),
 });
 
 export const VerdictSchema = z.object({
@@ -63,7 +64,11 @@ export function buildFinding(repoName , vuln , packageName , packageVersion , ca
 
 
       });
-
+      const terminalLocation = locations[locations.length - 1]; 
+      const terminalFilePath = path.join(__dirname , '..' , 'target-repos' , repoName , terminalLocation.file);
+      const terminalFunctionName = getFunctionNameAtLocation(terminalFilePath , terminalLocation.startLine);
+      const advisoryFunctionNames = extractAdvisoryFunctionNames(vuln.summary , vuln.details);
+      const functionLevelMatch = terminalFunctionName !== null && advisoryFunctionNames.has(terminalFunctionName);
 
       const finding = {
            cveId : vuln.id,
@@ -75,6 +80,7 @@ export function buildFinding(repoName , vuln , packageName , packageVersion , ca
            locations,
            advisorySummary : vuln.summary,
            advisoryDetails : vuln.details,
+           functionLevelMatch,
       };
 
       return findingSchema.parse(finding);
