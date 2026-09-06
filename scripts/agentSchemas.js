@@ -34,9 +34,14 @@ export const VerdictSchema = z.object({
        verdict : z.enum(['exploitable' , 'not-exploitable' , 'insufficient-evidence']),
        confidence : z.number().min(0).max(1),
        reasoning : z.string(),
-       citedEvidence : z.array(z.string()),
-       line : z.number(),
-       note : z.string(),
+       citedEvidence : z.array(z.object(
+        {
+            file : z.string(),
+            line : z.number(),
+            note : z.string(),
+        }
+       )),
+      
 })
 
 export function buildFinding(repoName , vuln , packageName , packageVersion , callGraphPath , reachabilityResult){
