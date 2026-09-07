@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { GoogleGenAI } from '@google/genai';
-import { generateFindings , VerdictSchema } from './agentSchemas.js';
+import {  VerdictSchema } from './agentSchemas.js';
 import { readFunctionBody , readSourceLines , readFunctionBodyDeclaration , readSourceLinesDeclaration } from './agentTools.js';
 import { Annotation, START, StateGraph , END } from '@langchain/langgraph';
 
@@ -53,7 +53,7 @@ function buildInitialContents(finding){
 
 async function callGeminiOnce(contents){
           const response = await ai.models.generateContent({
-                model : 'gemini-3.6-flash',
+                model : 'gemini-3.5-flash-lite',
                 contents,
                 config : {
                      tools : [
@@ -241,9 +241,3 @@ export async function runFindingThroughAgent(finding){
 
 
 
-const testFindings = generateFindings('vuln-fixture');
-const testFinding = testFindings.find((f) => f.cveId === 'GHSA-29mw-wpgm-hmr9');
-
-runFindingThroughAgent(testFinding).then((verdict) => {
-    console.log(JSON.stringify(verdict, null, 2));
-});

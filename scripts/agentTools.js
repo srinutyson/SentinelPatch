@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export function readSourceLines(repoName , filePath , startLine , endLine , contextLines = 5){
-     const  absolutePath = path.join(__dirname , '..' , 'target-repos' , repoName , filePath);
+     const absolutePath = path.join(__dirname , '..' , 'target-repos' , repoName , filePath);
      const source  = fs.readFileSync(absolutePath , 'utf-8');
      const lines = source.split('\n');
 
