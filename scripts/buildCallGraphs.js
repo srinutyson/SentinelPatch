@@ -354,6 +354,10 @@ function resolveModulePath(fromDir , importPath){
 
   const results = buildAllCallGraphs(mainFile,reponame);
 
+const coveragePath = path.join(__dirname , '..' , 'callgraphs' , `${reponame}__coverage.json`);
+  fs.writeFileSync(coveragePath , JSON.stringify(results , null , 2));
+  console.log(`\nCoverage report written to ${coveragePath}`);
+
    console.log('\n--- Summary ---');
    console.log(`Succeeded: ${results.filter((r) => r.status === 'success').length}`);
    console.log(`Failed (leaf, could not split further): ${results.filter((r) => r.status === 'failed').length}`);
