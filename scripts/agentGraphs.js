@@ -3,7 +3,7 @@ import { GoogleGenAI } from '@google/genai';
 import {  VerdictSchema } from './agentSchemas.js';
 import { readFunctionBody , readSourceLines , readFunctionBodyDeclaration , readSourceLinesDeclaration } from './agentTools.js';
 import { Annotation, START, StateGraph , END } from '@langchain/langgraph';
-
+import { retrieveRelevantChunks } from './retrieveAdvisories.js';
 
 const ai = new GoogleGenAI({apiKey : process.env.GEMINI_API_KEY });
 
@@ -20,7 +20,11 @@ const SYSTEM_INSTRUCTION = `
     3. Is this path reachable from a real production entry point, or does it only ever get triggered by test code?
 
     You will also see a "functionLevelMatch" field. If it is false, static analysis could only confirm the app reaches the vulnerable package generally — not the specific function this advisory names as vulnerable. Treat "functionLevelMatch: false" as a strong signal toward "insufficient-evidence" unless your own reading of the source independently proves the vulnerable code path is actually reached.
+
+     If a "Retrieved advisory excerpts" section is provided below, treat it as the authoritative source for how this specific CVE is typically exploited, rather than relying on your own possibly-outdated internal knowledge of it.
+
     Do not attempt to search the rest of the vulnerable package's source for the advisory's named function if it is not the one at the proven path's final location — your tools can only read a specific line range you already know, not search by name, so this kind of exploration will not converge. If "functionLevelMatch" is false, a brief check of the path's actual terminal location (to confirm it's unrelated to the advisory's named function) is enough basis to conclude "insufficient-evidence" directly, rather than continuing to search elsewhere in the file.
+
     You can call readSourceLines or readFunctionBody as many times as needed to inspect the actual code at any point along the path before deciding.
 
     When you are confident in your answer, respond with ONLY a JSON object (no other text) in exactly this shape:
@@ -39,14 +43,24 @@ function stripCodeFences(text) {
     return fenceMatch ? fenceMatch[1] : trimmed;
 }
 
-function buildInitialContents(finding){
+async function buildInitialContents(finding){
+      const relevantChunks = await retrieveRelevantChunks(finding.repoName, finding.cveId, 'How is this vulnerability typically exploited, and under what conditions?', 3);
+
+     const parts = [
+          {text : SYSTEM_INSTRUCTION},
+          {text : `Here is the finding to investigate:\n${JSON.stringify(finding, null, 2)}`},
+     ]
+
+     if(relevantChunks.length > 0){
+         const retrievedContext = relevantChunks.map((chunk) => chunk.chunkText).join('\n\n');
+         parts.push({
+                text : `Retrieved advisory excerpts most relevant to how this CVE is exploited:\n${retrievedContext}`,
+            });
+     }
         return [
               {
                  role : 'user',
-                 parts : [
-                         {text : SYSTEM_INSTRUCTION},
-                         {text : `Here is the finding to investigate:\n${JSON.stringify(finding, null, 2)}`},
-                 ],
+                 parts ,
               },
         ];
 }
@@ -228,7 +242,7 @@ export async function runFindingThroughAgent(finding){
       const finalState = await compiledGraph.invoke(
            {
             finding,
-            contents : buildInitialContents(finding),
+            contents : await buildInitialContents(finding),
             stepCount : 0,
             verdict : null,
            },
