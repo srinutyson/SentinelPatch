@@ -111,26 +111,35 @@ function getCallGraphFilesForRepo(repoName){
 
 export function generateFindings(repoName){
          const vulnerabilities = loadVulnerabilityReport(repoName).filter((entry)=> entry.vulnerabilities && entry.vulnerabilities.length > 0);
-         
-         const callGraphPaths =getCallGraphFilesForRepo(repoName);
-         
+
+         const callGraphPaths = getCallGraphFilesForRepo(repoName);
+
          console.log(`Checking ${vulnerabilities.length} vulnerable package(s) against ${callGraphPaths.length} call graph(s) for ${repoName}...`);
-         
+
          const findings = [];
-         
-        for(const callGraphPath of callGraphPaths){
-            for(const dep of vulnerabilities){
-                const result = checkReachability(callGraphPath,dep.name,dep.version,repoName);
-                
-                if(result.reachable){
-                    console.log(`  ✅ reachable: ${dep.name} from ${path.basename(callGraphPath)}`);
-                    for(const vuln of dep.vulnerabilities){
-                        const finding = buildFinding(repoName , vuln , dep.name , dep.version , callGraphPath , result);
-                         findings.push(finding);
-                    }
-                }
-                else if(result.status === 'inconclusive'){
+
+        for(const dep of vulnerabilities){
+            const reachableResults = [];
+
+            for(const callGraphPath of callGraphPaths){
+                const result = checkReachability(callGraphPath , dep.name , dep.version , repoName);
+
+                if(result.status === 'reachable'){
+                    reachableResults.push({ callGraphPath, result });
+                } else if(result.status === 'inconclusive'){
                     console.log(`  ⚠️  inconclusive: ${dep.name} from ${path.basename(callGraphPath)} — static analysis coverage was incomplete, reachability could not be determined`);
+                }
+            }
+
+            if(reachableResults.length > 0){
+                const entryPoints = reachableResults.map(({ callGraphPath }) => path.basename(callGraphPath , '.json'));
+                console.log(`  ✅ reachable: ${dep.name} (proven from: ${entryPoints.join(', ')})`);
+
+                const { callGraphPath, result } = reachableResults[0];
+
+                for(const vuln of dep.vulnerabilities){
+                    const finding = buildFinding(repoName , vuln , dep.name , dep.version , callGraphPath , result);
+                    findings.push(finding);
                 }
             }
         }
@@ -138,30 +147,35 @@ export function generateFindings(repoName){
     return findings;
 }
 
-
 export function generateUnresolvedFindings(repoName){
          const vulnerabilities = loadVulnerabilityReport(repoName).filter((entry)=> entry.vulnerabilities && entry.vulnerabilities.length > 0);
          const callGraphPaths = getCallGraphFilesForRepo(repoName);
 
          const unresolved = [];
 
-        for(const callGraphPath of callGraphPaths){
-            for(const dep of vulnerabilities){
+        for(const dep of vulnerabilities){
+            const inconclusiveEntryPoints = [];
+
+            for(const callGraphPath of callGraphPaths){
                 const result = checkReachability(callGraphPath , dep.name , dep.version , repoName);
 
                 if(result.status === 'inconclusive'){
-                    for(const vuln of dep.vulnerabilities){
-                        unresolved.push({
-                            cveId: vuln.id,
-                            packageName: dep.name,
-                            packageVersion: dep.version,
-                            repoName,
-                            entryPointFile: path.basename(callGraphPath , '.json'),
-                            status: 'inconclusive',
-                            advisorySummary: vuln.summary,
-                            reason: 'Static analysis coverage was incomplete for this repo (one or more entry points failed to analyze) — reachability could not be confidently determined.',
-                        });
-                    }
+                    inconclusiveEntryPoints.push(path.basename(callGraphPath , '.json'));
+                }
+            }
+
+            if(inconclusiveEntryPoints.length > 0){
+                for(const vuln of dep.vulnerabilities){
+                    unresolved.push({
+                        cveId: vuln.id,
+                        packageName: dep.name,
+                        packageVersion: dep.version,
+                        repoName,
+                        entryPointFiles: inconclusiveEntryPoints,
+                        status: 'inconclusive',
+                        advisorySummary: vuln.summary,
+                        reason: 'Static analysis coverage was incomplete for this repo (one or more entry points failed to analyze) — reachability could not be confidently determined.',
+                    });
                 }
             }
         }
