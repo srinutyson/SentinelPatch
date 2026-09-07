@@ -161,14 +161,23 @@ export function checkReachability(callGraphPath , packageName,packageVersion ,re
 
        const reachablePaths = findReachablePath(entryFunIndices , vulnerableFunIndices , adjacencyMap);
 
-      return { reachable: reachablePaths !== null, path: reachablePaths };
+       if(reachablePaths !== null){
+           return { reachable: true , status: 'reachable' , path: reachablePaths };
+       }
+
+       if(hasIncompleteCoverage(repoName)){
+           return { reachable: false , status: 'inconclusive' , path: null };
+       }
+
+       return { reachable: false , status: 'not-reachable' , path: null };
 }
 
 export function checkReachabilityForRepo(repoName , packageName , packageVersion){
        const callGraphDirectory = path.join(__dirname , '..' , 'callgraphs');
-       const callGraphsNames  = (fs.readdirSync(callGraphDirectory)).filter((callGraph)=>
+              const callGraphsNames  = (fs.readdirSync(callGraphDirectory)).filter((callGraph)=>
                              callGraph.startsWith(`${repoName}__`) &&
-                             callGraph.endsWith('.json')
+                             callGraph.endsWith('.json') &&
+                             !callGraph.endsWith('__coverage.json')
                             );
        const results =  callGraphsNames.map((filename)=>{
                          const fullPath = path.join(callGraphDirectory , filename);
@@ -177,8 +186,23 @@ export function checkReachabilityForRepo(repoName , packageName , packageVersion
                          return {
                              entryPoint : filename,
                              reachable : result.reachable,
+                             status : result.status,
                              path : result.path
                          }
                        });
        return results;
+}
+
+function loadCoverageReport(repoName){
+    const coveragePath = path.join(__dirname , '..' , 'callgraphs' , `${repoName}__coverage.json`);
+    if(!fs.existsSync(coveragePath)){
+        return null; 
+    }
+    return JSON.parse(fs.readFileSync(coveragePath , 'utf8'));
+}
+
+function hasIncompleteCoverage(repoName){
+    const coverage = loadCoverageReport(repoName);
+    if(coverage === null) return false;
+    return coverage.some((entry) => entry.status === 'failed');
 }
