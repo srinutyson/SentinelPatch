@@ -5,3 +5,5 @@ callgraphs
 vulnerabilities-*.json
 PROJECT_PLAN.md
 .env
+embeddings-*.json
+verdicts-*.json
