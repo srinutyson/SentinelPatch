@@ -4,3 +4,4 @@ target-repos/*
 callgraphs
 vulnerabilities-*.json
 PROJECT_PLAN.md
+.env
