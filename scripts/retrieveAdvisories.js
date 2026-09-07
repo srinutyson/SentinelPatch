@@ -27,8 +27,8 @@ function cosineSimilarity(a,b){
 function loadEmbeddings(repoName){
        const embeddingsPath = path.join(__dirname , '..' ,`embeddings-${repoName}.json`);
        if(!fs.existsSync(embeddingsPath)){
-           throw new Error(`No embeddings found at ${embeddingsPath} — run: node scripts/embedAdvisories.js ${repoName}`);
-
+          console.warn(`No embeddings found at ${embeddingsPath} — run: node scripts/embedAdvisories.js ${repoName}. Proceeding without retrieved context.`);
+           return [];
        }
        return JSON.parse(fs.readFileSync(embeddingsPath , 'utf-8'));
 }
