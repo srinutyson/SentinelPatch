@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-     "test": "node --experimental-vm-modules node_modules/.bin/jest"
+     "test": "node --experimental-vm-modules node_modules/.bin/jest",
+     "test:agent": "node --experimental-vm-modules node_modules/.bin/jest --config jest.agent.config.js"
   },
   "keywords": [],
   "author": "",
