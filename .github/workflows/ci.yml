@@ -21,6 +21,10 @@ jobs :
          - name : Install dependencies
            run : npm ci
 
+         - name : Install vuln-fixture's own dependencies
+           working-directory: target-repos/vuln-fixture
+           run: npm install
+
          - name : Run tests
            run : npm test  
         
