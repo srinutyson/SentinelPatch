@@ -1,7 +1,8 @@
 node_modules
 target-repos/*
 !target-repos/vuln-fixture
-callgraphs
+callgraphs/*
+!callgraphs/vuln-fixture__app.json
 vulnerabilities-*.json
 PROJECT_PLAN.md
 .env
