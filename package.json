@@ -4,8 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-     "test": "node --experimental-vm-modules node_modules/.bin/jest",
-     "test:agent": "node --experimental-vm-modules node_modules/.bin/jest --config jest.agent.config.js"
+    "test": "node --experimental-vm-modules node_modules/.bin/jest",
+    "test:agent": "node --experimental-vm-modules node_modules/.bin/jest --config jest.agent.config.js"
   },
   "keywords": [],
   "author": "",
@@ -16,10 +16,14 @@
     "@langchain/langgraph": "^1.4.14",
     "acorn": "^8.18.0",
     "acorn-walk": "^8.3.5",
+    "commander": "^15.0.0",
     "dotenv": "^17.4.2",
     "zod": "^4.5.4"
   },
   "devDependencies": {
     "jest": "^30.5.1"
+  },
+  "bin": {
+    "sentinelpatch": "./bin/cli.js"
   }
 }
