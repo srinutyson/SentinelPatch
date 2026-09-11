@@ -1,14 +1,8 @@
 import 'dotenv/config';
 import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
 
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 const ai = new GoogleGenAI({ apiKey : process.env.GEMINI_API_KEY});
-
 
 function cosineSimilarity(a,b){
       let dot = 0;
@@ -24,18 +18,16 @@ function cosineSimilarity(a,b){
       return dot/(Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-function loadEmbeddings(repoName){
-       const embeddingsPath = path.join(__dirname , '..' ,`embeddings-${repoName}.json`);
-       if(!fs.existsSync(embeddingsPath)){
-          console.warn(`No embeddings found at ${embeddingsPath} — run: node scripts/embedAdvisories.js ${repoName}. Proceeding without retrieved context.`);
+function loadEmbeddings(ctx){
+       if(!fs.existsSync(ctx.embeddingsPath)){
+          console.warn(`No embeddings found at ${ctx.embeddingsPath} — run the embedding step first. Proceeding without retrieved context.`);
            return [];
        }
-       return JSON.parse(fs.readFileSync(embeddingsPath , 'utf-8'));
+       return JSON.parse(fs.readFileSync(ctx.embeddingsPath , 'utf-8'));
 }
 
-
-export async function retrieveRelevantChunks(repoName , cveId , queryText , topK = 3){
-    const allRecords = loadEmbeddings(repoName);
+export async function retrieveRelevantChunks(ctx , cveId , queryText , topK = 3){
+    const allRecords = loadEmbeddings(ctx);
     const recordsForCve = allRecords.filter((record)=> record.cveId  === cveId);
 
     if(recordsForCve.length === 0){
