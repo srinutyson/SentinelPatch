@@ -1,6 +1,6 @@
 {
   "name": "sentinelpatch",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Determine which known CVEs in your Node.js dependencies are actually reachable and exploitable, using static call-graph analysis and an AI agent grounded in the real OSV advisory text.",
   "scripts": {
     "test": "node --experimental-vm-modules node_modules/.bin/jest",
