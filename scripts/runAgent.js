@@ -9,10 +9,10 @@ function sleep(ms) {
 
 const DELAY_BETWEEN_FINDINGS_MS = 60000;
 
-export async function runAgentOnRepo(ctx){
+export async function runAgentOnRepo(ctx, precomputed = {}){
     ensureOutputDirs(ctx);
-    const findings = generateFindings(ctx);
-    const unresolved = generateUnresolvedFindings(ctx);
+    const findings = precomputed.findings || generateFindings(ctx);
+    const unresolved = precomputed.unresolved || generateUnresolvedFindings(ctx);
 
     console.log(`\nRunning agent on ${findings.length} finding(s) for ${ctx.projectId}...`);
 

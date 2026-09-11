@@ -3,17 +3,13 @@ import { resolveScanContext, ensureOutputDirs } from './projectPaths.js';
 import { writeVulnerabilityReport } from './queryVulnerabilities.js';
 import { getMainFile, buildAllCallGraphs } from './buildCallGraphs.js';
 import { runAgentOnRepo } from './runAgent.js';
+import { generateFindings, generateUnresolvedFindings } from './agentSchemas.js';
 
-function buildSummary(ctx, ranAgent){
+function buildSummary(ctx, findings, unresolved, verdictsOutput){
     const vulnerabilities = fs.existsSync(ctx.vulnerabilitiesPath)
         ? JSON.parse(fs.readFileSync(ctx.vulnerabilitiesPath, 'utf-8'))
         : [];
     const vulnerablePackages = vulnerabilities.filter((dep) => dep.vulnerabilities && dep.vulnerabilities.length > 0);
-
-    let verdictsOutput = null;
-    if(ranAgent && fs.existsSync(ctx.verdictsPath)){
-        verdictsOutput = JSON.parse(fs.readFileSync(ctx.verdictsPath, 'utf-8'));
-    }
 
     const exploitable = verdictsOutput
         ? verdictsOutput.verdicts.filter((v) => v.verdict === 'exploitable')
@@ -23,10 +19,11 @@ function buildSummary(ctx, ranAgent){
         repoPath: ctx.repoPath,
         projectId: ctx.projectId,
         vulnerablePackageCount: vulnerablePackages.length,
-        agentRan: ranAgent,
+        reachableFindingCount: findings.length,
+        unresolvedCount: unresolved.length,
+        agentRan: verdictsOutput !== null,
         exploitableCount: exploitable.length,
         exploitable,
-        unresolvedCount: verdictsOutput ? verdictsOutput.unresolved.length : 0,
     };
 }
 
@@ -34,9 +31,10 @@ function formatTable(summary){
     const lines = [];
     lines.push(`Scan target: ${summary.repoPath}`);
     lines.push(`Vulnerable packages found: ${summary.vulnerablePackageCount}`);
+    lines.push(`Reachable findings (proven call path exists): ${summary.reachableFindingCount}`);
+    lines.push(`Inconclusive (incomplete call-graph coverage): ${summary.unresolvedCount}`);
     if(summary.agentRan){
         lines.push(`Exploitable (agent-confirmed): ${summary.exploitableCount}`);
-        lines.push(`Inconclusive (incomplete coverage): ${summary.unresolvedCount}`);
         if(summary.exploitableCount > 0){
             lines.push('');
             lines.push('Exploitable findings:');
@@ -46,7 +44,7 @@ function formatTable(summary){
             }
         }
     } else {
-        lines.push('Agent step skipped (skipAgent option was set) — reachability data only.');
+        lines.push('Agent step skipped (skipAgent option was set) — exploitability not judged, reachability data above is still real.');
     }
     return lines.join('\n');
 }
@@ -57,9 +55,10 @@ function formatMarkdown(summary){
     lines.push('');
     lines.push(`**Target:** \`${summary.repoPath}\``);
     lines.push(`**Vulnerable packages found:** ${summary.vulnerablePackageCount}`);
+    lines.push(`**Reachable findings (proven call path exists):** ${summary.reachableFindingCount}`);
+    lines.push(`**Inconclusive (incomplete call-graph coverage):** ${summary.unresolvedCount}`);
     if(summary.agentRan){
         lines.push(`**Exploitable (agent-confirmed):** ${summary.exploitableCount}`);
-        lines.push(`**Inconclusive (incomplete coverage):** ${summary.unresolvedCount}`);
         lines.push('');
         if(summary.exploitableCount > 0){
             lines.push('## Exploitable findings');
@@ -73,7 +72,7 @@ function formatMarkdown(summary){
         }
     } else {
         lines.push('');
-        lines.push('_Agent step skipped (skipAgent option was set) — reachability data only._');
+        lines.push('_Agent step skipped (skipAgent option was set) — exploitability not judged, reachability data above is still real._');
     }
     return lines.join('\n');
 }
@@ -103,12 +102,17 @@ export async function runScan(inputPath, options = {}){
     const coverageResults = buildAllCallGraphs(mainFile, ctx);
     fs.writeFileSync(ctx.coveragePath, JSON.stringify(coverageResults, null, 2));
 
+    console.log('Checking reachability...');
+    const findings = generateFindings(ctx);
+    const unresolved = generateUnresolvedFindings(ctx);
+
+    let verdictsOutput = null;
     if(!skipAgent){
         console.log('Running agent verdicts...');
-        await runAgentOnRepo(ctx);
+        verdictsOutput = await runAgentOnRepo(ctx, { findings, unresolved });
     }
 
-    const summary = buildSummary(ctx, !skipAgent);
+    const summary = buildSummary(ctx, findings, unresolved, verdictsOutput);
     const formatted = formatSummary(summary, output);
 
     if(outFile){
