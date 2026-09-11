@@ -1,12 +1,9 @@
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import * as acorn from 'acorn';
 import * as walk from 'acorn-walk';
 import { spawnSync } from 'child_process';
-
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { resolveScanContext, ensureOutputDirs } from './projectPaths.js';
 
 function getLocalImports(filePath){
         const source = fs.readFileSync(filePath , 'utf-8');
@@ -76,30 +73,29 @@ function resolveModulePath(fromDir , importPath){
        return getLocalImports(mainFilePath);
   }
 
-  function loadVulnerablePackages(reponame){
-     const reportPath = path.join(__dirname , '..' , `vulnerabilities-${reponame}.json`);
-     if(!fs.existsSync(reportPath)){
-        console.warn(`No vulnerability report found at ${reportPath} — run: node scripts/queryVulnerabilities.js ${reponame}`);
+  function loadVulnerablePackages(ctx){
+     if(!fs.existsSync(ctx.vulnerabilitiesPath)){
+        console.warn(`No vulnerability report found at ${ctx.vulnerabilitiesPath} — run the vulnerability query step first.`);
         return [];
      }
-     const report = JSON.parse(fs.readFileSync(reportPath , 'utf-8'));
+     const report = JSON.parse(fs.readFileSync(ctx.vulnerabilitiesPath , 'utf-8'));
      const names = report
                    .filter((dep)=> dep.vulnerabilities && dep.vulnerabilities.length >0)
                    .map((dep)=> dep.name);
      return [...new Set(names)]
   }
 
-  function loadLockfile(reponame){
-     const lockPath = path.join(__dirname , '..' , 'target-repos' , reponame , 'package-lock.json');
+  function loadLockfile(ctx){
+     const lockPath = path.join(ctx.repoPath , 'package-lock.json');
      if(!fs.existsSync(lockPath)){
-        console.warn(`No package-lock.json found for ${reponame} — skipping ancestor-package expansion`);
+        console.warn(`No package-lock.json found for ${ctx.repoPath} — skipping ancestor-package expansion`);
         return null;
      }
      return JSON.parse(fs.readFileSync(lockPath , 'utf-8'));
   }
 
   function buildReverseDependencyMap(lockJson){
-     const reverseMap = new Map(); // depName -> Set of package names that directly require it
+     const reverseMap = new Map();
 
      for(const [key, entry] of Object.entries(lockJson.packages || {})){
         if(key === '') continue;
@@ -136,8 +132,8 @@ function resolveModulePath(fromDir , importPath){
      return ancestors;
   }
 
-  function getScopedIncludeList(reponame, vulnerablePackages){
-     const lockJson = loadLockfile(reponame);
+  function getScopedIncludeList(ctx, vulnerablePackages){
+     const lockJson = loadLockfile(ctx);
      if(!lockJson) return vulnerablePackages;
 
      const reverseMap = buildReverseDependencyMap(lockJson);
@@ -153,9 +149,9 @@ function resolveModulePath(fromDir , importPath){
      return [...fullSet];
   }
 
-  function runJellyOnFile(filePath , outputName ,{ heapSizeMB = 4096 , includeOnly = null} = {}){
-         const jsonOut = path.join(__dirname , '..' ,'callgraphs' , `${outputName}.json`);
-         const htmlOut = path.join(__dirname , '..' , 'callgraphs' , `${outputName}.html`);
+  function runJellyOnFile(filePath , outputName , ctx , { heapSizeMB = 4096 , includeOnly = null} = {}){
+         const jsonOut = path.join(ctx.callGraphsDir , `${outputName}.json`);
+         const htmlOut = path.join(ctx.callGraphsDir , `${outputName}.html`);
          const args = ['-j', jsonOut, '-m', htmlOut, filePath];
          if (includeOnly && includeOnly.length > 0) {
             args.push('--include-packages', ...includeOnly);
@@ -179,7 +175,7 @@ function resolveModulePath(fromDir , importPath){
          };
   }
 
-  function processEntryPoint(reponame , filePath , results = [] , visited = new Set() , depth = 0){
+  function processEntryPoint(ctx , filePath , results = [] , visited = new Set() , depth = 0){
     if(visited.has(filePath)){
         console.log(`${' '.repeat(depth)}⏭ skipping ${filePath} — already covered by another entry point's call graph`);
         results.push({ filePath, status: 'subsumed', note: 'already covered by another entry point\'s call graph' });
@@ -194,11 +190,11 @@ function resolveModulePath(fromDir , importPath){
 
     visited.add(filePath);
 
-    const outputName = path.relative(path.join(__dirname, '..' , 'target-repos') , filePath)
+    const outputName = path.relative(ctx.repoPath , filePath)
                        .replace(/[\\/]/g , '__')
                        .replace(/\.js$/ , '');
     console.log(`${' '.repeat(depth)}Analyzing: ${filePath}`);
-    const first  = runJellyOnFile(filePath , outputName);
+    const first  = runJellyOnFile(filePath , outputName , ctx);
     if(first.success){
         console.log(`${' '.repeat(depth)} ✅ succeeded`);
         results.push({filePath , outputName , status : 'success'});
@@ -207,12 +203,12 @@ function resolveModulePath(fromDir , importPath){
 
     console.log(`${' '.repeat(depth)}  ❌ failed, attempting scoped retry on this file`);
 
-    const baseVulnerablePackages = loadVulnerablePackages(reponame);
-    const vulnerablePackages = getScopedIncludeList(reponame, baseVulnerablePackages);
+    const baseVulnerablePackages = loadVulnerablePackages(ctx);
+    const vulnerablePackages = getScopedIncludeList(ctx, baseVulnerablePackages);
     let ownScopedSucceeded = false;
 
     if(vulnerablePackages.length > 0){
-        const scoped = runJellyOnFile(filePath , outputName , {includeOnly : vulnerablePackages , heapSizeMB : 6144,});
+        const scoped = runJellyOnFile(filePath , outputName , ctx , {includeOnly : vulnerablePackages , heapSizeMB : 6144,});
         if(scoped.success){
             console.log(`${'  '.repeat(depth)}  ✅ succeeded (scoped to: ${vulnerablePackages.join(', ')})`);
             results.push({filePath , outputName , status : 'success' , scopedTo : vulnerablePackages});
@@ -240,31 +236,30 @@ function resolveModulePath(fromDir , importPath){
 
     console.log(`${'  '.repeat(depth)}  also splitting into local imports for supplementary coverage`);
     for(const importedFile of localImports){
-       processEntryPoint(reponame,importedFile , results , visited , depth+1);
+       processEntryPoint(ctx,importedFile , results , visited , depth+1);
     }
 
     return results;
 }
 
-  function buildAllCallGraphs(mainFilePath,reponame){
+  export function buildAllCallGraphs(mainFilePath, ctx){
 
     const results = [];
     const visited = new Set();
 
     console.log(`Analyzing main entry file itself: ${mainFilePath}`);
-    processEntryPoint(reponame, mainFilePath, results, visited);
+    processEntryPoint(ctx, mainFilePath, results, visited);
 
     const entryPoints = discoveryEntryPoints(mainFilePath);
     console.log(`Discovered ${entryPoints.length} initial entry points from ${mainFilePath}`);
 
-
-
       for(const entryPoint of entryPoints){
-          processEntryPoint(reponame , entryPoint , results,visited);
+          processEntryPoint(ctx , entryPoint , results,visited);
       }
 
       return results;
   }
+
    function resolveExportsField(exportsValue){
       if(!exportsValue) return null;
 
@@ -294,8 +289,9 @@ function resolveModulePath(fromDir , importPath){
       }
       return null;
    }
-   function getMainFile(reponame){
-      const repoPath = path.join(__dirname , '..' , 'target-repos',reponame);
+
+   export function getMainFile(ctx){
+      const repoPath = ctx.repoPath;
       const pkgJsonPath = path.join(repoPath , 'package.json');
       const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath , 'utf8'));
       const candidates = [];
@@ -310,18 +306,13 @@ function resolveModulePath(fromDir , importPath){
            if(resolved){
             console.log(resolved);
                return resolved;
-
            }
       }
 
-
            throw new Error(
-            `Could not resolve entry file for "${reponame}" — tried "${candidates.join(', ')}" ` +
+            `Could not resolve entry file for "${repoPath}" — tried "${candidates.join(', ')}" ` +
             `(from package.json "exports"/"main", or the "index.js" default) but no matching file exists.`
         );
-
-
-
    }
 
    function extractEntryFromStartScript(startScript){
@@ -333,7 +324,7 @@ function resolveModulePath(fromDir , importPath){
      for(let i = 0; i < tokens.length; i++) {
         if (knownRunners.has(tokens[i])) {
             for (let j = i + 1; j < tokens.length; j++) {
-                if (tokens[j].startsWith('-')) continue; // flag, skip it
+                if (tokens[j].startsWith('-')) continue;
                 return tokens[j];
             }
         }
@@ -345,20 +336,22 @@ function resolveModulePath(fromDir , importPath){
         }
     }
 
-
       return null;
    }
 
- const reponame = process.argv[2] || 'hackathon-starter';
- const mainFile = getMainFile(reponame)
+if (import.meta.url === `file://${process.argv[1]}`) {
+    const repoPathArg = process.argv[2] || 'target-repos/hackathon-starter';
+    const ctx = resolveScanContext(repoPathArg);
+    ensureOutputDirs(ctx);
 
-  const results = buildAllCallGraphs(mainFile,reponame);
+    const mainFile = getMainFile(ctx);
+    const results = buildAllCallGraphs(mainFile, ctx);
 
-const coveragePath = path.join(__dirname , '..' , 'callgraphs' , `${reponame}__coverage.json`);
-  fs.writeFileSync(coveragePath , JSON.stringify(results , null , 2));
-  console.log(`\nCoverage report written to ${coveragePath}`);
+    fs.writeFileSync(ctx.coveragePath , JSON.stringify(results , null , 2));
+    console.log(`\nCoverage report written to ${ctx.coveragePath}`);
 
-   console.log('\n--- Summary ---');
-   console.log(`Succeeded: ${results.filter((r) => r.status === 'success').length}`);
-   console.log(`Failed (leaf, could not split further): ${results.filter((r) => r.status === 'failed').length}`);
-   console.log(JSON.stringify(results, null, 2));
+    console.log('\n--- Summary ---');
+    console.log(`Succeeded: ${results.filter((r) => r.status === 'success').length}`);
+    console.log(`Failed (leaf, could not split further): ${results.filter((r) => r.status === 'failed').length}`);
+    console.log(JSON.stringify(results, null, 2));
+}
