@@ -5,7 +5,13 @@ import { readFunctionBody , readSourceLines , readFunctionBodyDeclaration , read
 import { Annotation, START, StateGraph , END } from '@langchain/langgraph';
 import { retrieveRelevantChunks } from './retrieveAdvisories.js';
 
-const ai = new GoogleGenAI({apiKey : process.env.GEMINI_API_KEY });
+let ai = null;
+function getAI(){
+    if(!ai){
+        ai = new GoogleGenAI({apiKey : process.env.GEMINI_API_KEY });
+    }
+    return ai;
+}
 
 const MAX_STEPS = 8;
 
@@ -66,7 +72,7 @@ async function buildInitialContents(finding, ctx){
 }
 
 async function callGeminiOnce(contents){
-          const response = await ai.models.generateContent({
+          const response = await getAI().models.generateContent({
                 model : 'gemini-3.5-flash-lite',
                 contents,
                 config : {

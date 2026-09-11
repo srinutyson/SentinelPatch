@@ -3,7 +3,13 @@ import fs from 'fs';
 import { GoogleGenAI } from '@google/genai';
 import { resolveScanContext, ensureOutputDirs } from './projectPaths.js';
 
-const ai = new GoogleGenAI({ apiKey : process.env.GEMINI_API_KEY});
+let ai = null;
+function getAI(){
+    if(!ai){
+        ai = new GoogleGenAI({ apiKey : process.env.GEMINI_API_KEY});
+    }
+    return ai;
+}
 
  function chunkText(text , maxChunkLength = 8000){
     const paragraphs = text
@@ -28,7 +34,7 @@ const ai = new GoogleGenAI({ apiKey : process.env.GEMINI_API_KEY});
 }
 
 async function embedChunks(chunks){
-       const response = await ai.models.embedContent({
+       const response = await getAI().models.embedContent({
            model : 'gemini-embedding-001',
            contents : chunks,
            config : {

@@ -2,7 +2,13 @@ import 'dotenv/config';
 import fs from 'fs';
 import { GoogleGenAI } from '@google/genai';
 
-const ai = new GoogleGenAI({ apiKey : process.env.GEMINI_API_KEY});
+let ai = null;
+function getAI(){
+    if(!ai){
+        ai = new GoogleGenAI({ apiKey : process.env.GEMINI_API_KEY});
+    }
+    return ai;
+}
 
 function cosineSimilarity(a,b){
       let dot = 0;
@@ -34,7 +40,7 @@ export async function retrieveRelevantChunks(ctx , cveId , queryText , topK = 3)
          return [];
     }
 
-    const response = await ai.models.embedContent({
+    const response = await getAI().models.embedContent({
          model : 'gemini-embedding-001',
          contents : queryText,
          config : { taskType : 'RETRIEVAL_QUERY'},
