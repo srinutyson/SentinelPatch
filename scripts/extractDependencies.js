@@ -1,30 +1,22 @@
 import fs from 'fs'
 import path from 'path'
-import { fileURLToPath } from 'url';
 
-const dirname = path.dirname(fileURLToPath(import.meta.url));
-
-export function getDependencies(reponame){
-        const repoPath = path.join(dirname , '..' , 'target-repos' , reponame);
+export function getDependencies(ctx){
+        const repoPath = ctx.repoPath;
 
         const pkgJsonPath  = path.join(repoPath , "package.json");
         const lockJsonPath = path.join(repoPath, "package-lock.json");
 
         const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath , "utf8"));
-
         const lockJson = JSON.parse(fs.readFileSync(lockJsonPath , "utf8"));
 
         const directDependencies = new Set(Object.keys(pkgJson.dependencies || {}));
 
-      
         if(lockJson.lockfileVersion >= 2){
                return dedupe(getAllInstalledPackages(lockJson , directDependencies));
         }
-           
-        return dedupe(walkV1Tree(lockJson.dependencies,directDependencies));
-       
 
-        
+        return dedupe(walkV1Tree(lockJson.dependencies,directDependencies));
 }
 
  function getAllInstalledPackages(lockJson,dirNames){
@@ -38,10 +30,8 @@ export function getDependencies(reponame){
                    name ,
                    version : entry.version || null,
                    direct : isTopLevel && dirNames.has(name),
-
              };
        });
-
 }
 
 function walkV1Tree(depsObject , directNames , isToplevel = true){
@@ -51,7 +41,7 @@ function walkV1Tree(depsObject , directNames , isToplevel = true){
          for(const [name , info] of entries){
                results.push({
                  name,
-                 version : info.version || null , 
+                 version : info.version || null ,
                  direct : isToplevel && directNames.has(name),
                });
                 if (info.dependencies) {
