@@ -1,10 +1,8 @@
 import {z} from 'zod';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { checkReachability } from './reachability.js';
 import { getFunctionNameAtLocation , extractAdvisoryFunctionNames } from './functionMatch.js';
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const locationSchema = z.object({
       funcId : z.number(),
@@ -14,7 +12,6 @@ const locationSchema = z.object({
       endLine :  z.number(),
       endCol : z.number()
 });
-
 
 export const findingSchema = z.object({
       cveId : z.string(),
@@ -41,10 +38,9 @@ export const VerdictSchema = z.object({
             note : z.string(),
         }
        )),
-      
 })
 
-export function buildFinding(repoName , vuln , packageName , packageVersion , callGraphPath , reachabilityResult){
+export function buildFinding(ctx , vuln , packageName , packageVersion , callGraphPath , reachabilityResult){
       if(!reachabilityResult.reachable || !reachabilityResult.path){
         throw new Error(
             `buildFinding requires a reachable result with a real path — got reachable=${reachabilityResult.reachable}. ` +
@@ -66,11 +62,9 @@ export function buildFinding(repoName , vuln , packageName , packageVersion , ca
                    endLine : Number(endLine),
                    endCol : Number(endCol),
                };
-
-
       });
-      const terminalLocation = locations[locations.length - 1]; 
-      const terminalFilePath = path.join(__dirname , '..' , 'target-repos' , repoName , terminalLocation.file);
+      const terminalLocation = locations[locations.length - 1];
+      const terminalFilePath = path.join(ctx.repoPath , terminalLocation.file);
       const terminalFunctionName = getFunctionNameAtLocation(terminalFilePath , terminalLocation.startLine);
       const advisoryFunctionNames = extractAdvisoryFunctionNames(vuln.summary , vuln.details);
       const functionLevelMatch = terminalFunctionName !== null && advisoryFunctionNames.has(terminalFunctionName);
@@ -79,7 +73,7 @@ export function buildFinding(repoName , vuln , packageName , packageVersion , ca
            cveId : vuln.id,
            packageName,
            packageVersion,
-           repoName,
+           repoName : path.basename(ctx.repoPath),
            entryPointFile : path.basename(callGraphPath , '.json'),
            path : reachabilityResult.path,
            locations,
@@ -91,30 +85,28 @@ export function buildFinding(repoName , vuln , packageName , packageVersion , ca
       return findingSchema.parse(finding);
 }
 
-function loadVulnerabilityReport(repoName){
-     
-      const reportPath = path.join(__dirname , '..' , `vulnerabilities-${repoName}.json`);
-      if(!fs.existsSync(reportPath)){
-        console.warn(`No vulnerability report found at ${reportPath} — run: node scripts/queryVulnerabilities.js ${repoName}`);
+function loadVulnerabilityReport(ctx){
+      if(!fs.existsSync(ctx.vulnerabilitiesPath)){
+        console.warn(`No vulnerability report found at ${ctx.vulnerabilitiesPath} — run the vulnerability query step first.`);
         return [];
       }
-      return  JSON.parse(fs.readFileSync(reportPath , 'utf-8'));
-
+      return  JSON.parse(fs.readFileSync(ctx.vulnerabilitiesPath , 'utf-8'));
 }
 
-function getCallGraphFilesForRepo(repoName){
-    const dirPath = path.join(__dirname , '..' , 'callgraphs');
-    return  fs.readdirSync(dirPath)
-            .filter((filename)=> filename.startsWith(`${repoName}__`) && filename.endsWith('.json') && !filename.endsWith('__coverage.json'))
-            .map((filename)=> path.join(dirPath , filename));
+function getCallGraphFilesForRepo(ctx){
+    if(!fs.existsSync(ctx.callGraphsDir)){
+        return [];
+    }
+    return  fs.readdirSync(ctx.callGraphsDir)
+            .filter((filename)=> filename.endsWith('.json'))
+            .map((filename)=> path.join(ctx.callGraphsDir , filename));
 }
 
-export function generateFindings(repoName){
-         const vulnerabilities = loadVulnerabilityReport(repoName).filter((entry)=> entry.vulnerabilities && entry.vulnerabilities.length > 0);
+export function generateFindings(ctx){
+         const vulnerabilities = loadVulnerabilityReport(ctx).filter((entry)=> entry.vulnerabilities && entry.vulnerabilities.length > 0);
+         const callGraphPaths = getCallGraphFilesForRepo(ctx);
 
-         const callGraphPaths = getCallGraphFilesForRepo(repoName);
-
-         console.log(`Checking ${vulnerabilities.length} vulnerable package(s) against ${callGraphPaths.length} call graph(s) for ${repoName}...`);
+         console.log(`Checking ${vulnerabilities.length} vulnerable package(s) against ${callGraphPaths.length} call graph(s) for ${ctx.projectId}...`);
 
          const findings = [];
 
@@ -122,7 +114,7 @@ export function generateFindings(repoName){
             const reachableResults = [];
 
             for(const callGraphPath of callGraphPaths){
-                const result = checkReachability(callGraphPath , dep.name , dep.version , repoName);
+                const result = checkReachability(callGraphPath , dep.name , dep.version , ctx);
 
                 if(result.status === 'reachable'){
                     reachableResults.push({ callGraphPath, result });
@@ -138,7 +130,7 @@ export function generateFindings(repoName){
                 const { callGraphPath, result } = reachableResults[0];
 
                 for(const vuln of dep.vulnerabilities){
-                    const finding = buildFinding(repoName , vuln , dep.name , dep.version , callGraphPath , result);
+                    const finding = buildFinding(ctx , vuln , dep.name , dep.version , callGraphPath , result);
                     findings.push(finding);
                 }
             }
@@ -147,9 +139,9 @@ export function generateFindings(repoName){
     return findings;
 }
 
-export function generateUnresolvedFindings(repoName){
-         const vulnerabilities = loadVulnerabilityReport(repoName).filter((entry)=> entry.vulnerabilities && entry.vulnerabilities.length > 0);
-         const callGraphPaths = getCallGraphFilesForRepo(repoName);
+export function generateUnresolvedFindings(ctx){
+         const vulnerabilities = loadVulnerabilityReport(ctx).filter((entry)=> entry.vulnerabilities && entry.vulnerabilities.length > 0);
+         const callGraphPaths = getCallGraphFilesForRepo(ctx);
 
          const unresolved = [];
 
@@ -157,7 +149,7 @@ export function generateUnresolvedFindings(repoName){
             const inconclusiveEntryPoints = [];
 
             for(const callGraphPath of callGraphPaths){
-                const result = checkReachability(callGraphPath , dep.name , dep.version , repoName);
+                const result = checkReachability(callGraphPath , dep.name , dep.version , ctx);
 
                 if(result.status === 'inconclusive'){
                     inconclusiveEntryPoints.push(path.basename(callGraphPath , '.json'));
@@ -170,7 +162,7 @@ export function generateUnresolvedFindings(repoName){
                         cveId: vuln.id,
                         packageName: dep.name,
                         packageVersion: dep.version,
-                        repoName,
+                        repoName: path.basename(ctx.repoPath),
                         entryPointFiles: inconclusiveEntryPoints,
                         status: 'inconclusive',
                         advisorySummary: vuln.summary,
