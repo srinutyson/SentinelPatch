@@ -1,0 +1,122 @@
+[
+  {
+    "cveId": "GHSA-hrpp-h998-j3pp",
+    "repoName": "express-mongoose-es6-rest-api-develop",
+    "packageName": "qs",
+    "toolReachabilityVerdict": "reachable",
+    "toolAgentVerdict": "exploitable",
+    "toolConfidence": 0.95,
+    "groundTruthVerdict": "exploitable",
+    "verificationMethod": "read real OSV advisory + qs fix commit test cases; confirmed Express forces allowPrototypes:true by default; found real sink at server/user/user.model.js:69 (.limit(+limit)/.skip(+skip)); reproduced end-to-end ~3s CPU freeze via GET /users?limit[__proto__]&limit[__proto__]&limit[length]=100000000",
+    "agreesWithTool": true,
+    "notes": "Tool's verdict was correct but its own cited evidence stopped at 'qs.parse reachable' — never identified the actual +limit/+skip coercion sink. Real hand-verification found a stronger proof chain than the tool itself produced."
+  },
+  {
+    "cveId": "GHSA-gxpj-cx7g-858c",
+    "repoName": "express-mongoose-es6-rest-api-develop",
+    "packageName": "debug",
+    "toolReachabilityVerdict": "reachable",
+    "toolAgentVerdict": "exploitable",
+    "toolConfidence": 0.9,
+    "groundTruthVerdict": "not-exploitable",
+    "verificationMethod": "read debug's own source (enabled()-gated formatting) and mquery's namespace registration (require('debug')('mquery')); checked app's own DEBUG env configs in package.json/docker-compose files",
+    "agreesWithTool": false,
+    "notes": "False positive. debug's vulnerable code never runs unless the exact namespace is enabled via DEBUG env var. This app's debug-mode configs only enable 'express-mongoose-es6-rest-api:*', which never matches mquery's own 'mquery' namespace, and production sets no DEBUG at all."
+  },
+  {
+    "cveId": "GHSA-v422-hmwv-36x6",
+    "repoName": "express-mongoose-es6-rest-api-develop",
+    "packageName": "body-parser",
+    "toolReachabilityVerdict": "reachable",
+    "toolAgentVerdict": "not-exploitable",
+    "toolConfidence": 0.95,
+    "groundTruthVerdict": "not-exploitable",
+    "verificationMethod": "grepped config/express.js for limit option usage",
+    "agreesWithTool": true,
+    "notes": "No custom limit option passed anywhere; bodyParser.json()/urlencoded({extended:true}) called with defaults only."
+  },
+  {
+    "cveId": "GHSA-p6mc-m468-83gw",
+    "repoName": "express-mongoose-es6-rest-api-develop",
+    "packageName": "lodash",
+    "toolReachabilityVerdict": "reachable",
+    "toolAgentVerdict": "not-exploitable",
+    "toolConfidence": 0.95,
+    "groundTruthVerdict": "not-exploitable",
+    "verificationMethod": "read express-jwt/lib/index.js source: _requestProperty = options.userProperty || options.requestProperty || 'user'; confirmed app never overrides it",
+    "agreesWithTool": true,
+    "notes": "lodash.set(req, 'user', result) has attacker-controlled value but a hardcoded path — prototype pollution via lodash.set requires path control, which isn't present here. Same CVE as vuln-fixture's positive control, correctly given the opposite verdict due to different usage context."
+  },
+  {
+    "cveId": "GHSA-8cf7-32gw-wr33",
+    "repoName": "express-mongoose-es6-rest-api-develop",
+    "packageName": "jsonwebtoken",
+    "toolReachabilityVerdict": "reachable",
+    "toolAgentVerdict": "insufficient-evidence",
+    "toolConfidence": 0,
+    "groundTruthVerdict": "not-exploitable",
+    "verificationMethod": "traced config/config.js, server/auth/auth.controller.js, server/auth/auth.route.js: single symmetric string secret (config.jwtSecret) used for both sign and verify, default HS256",
+    "agreesWithTool": null,
+    "notes": "Tool crashed on Zod schema validation (missing citedEvidence[0].note) before reaching a verdict — an agent-reliability failure, not a judgment error. The CVE requires misusing asymmetric key types (e.g. DSA key with RS256), which structurally cannot occur here since no asymmetric key is ever used."
+  },
+  {
+    "cveId": "GHSA-qwcr-r2fm-qrc7",
+    "repoName": "node-express-mongoose-master",
+    "packageName": "body-parser",
+    "toolReachabilityVerdict": "reachable",
+    "toolAgentVerdict": "contradictory (exploitable 0.95 and not-exploitable 0.9 on two separate runs, identical cited evidence)",
+    "toolConfidence": null,
+    "groundTruthVerdict": "exploitable",
+    "verificationMethod": "read real OSV advisory text; confirmed app enables urlencoded parsing exactly as the advisory's stated trigger condition describes, with no other condition given",
+    "agreesWithTool": "partial",
+    "notes": "The not-exploitable run's reasoning text visibly leaks internal deliberation ('Wait, let's check standard practice...') instead of a resolved answer — read as a real reliability defect, not a legitimate alternate conclusion. This is the clearest cross-run non-determinism finding in the whole eval."
+  },
+  {
+    "cveId": "GHSA-6rw7-vpxm-498p",
+    "repoName": "node-express-mongoose-master (also seen in express-mongoose-es6-rest-api-develop)",
+    "packageName": "qs",
+    "toolReachabilityVerdict": "reachable",
+    "toolAgentVerdict": "exploitable",
+    "toolConfidence": 0.9,
+    "groundTruthVerdict": "not-exploitable",
+    "verificationMethod": "read real OSV advisory text in full; grepped both repos for parameterLimit/arrayLimit overrides",
+    "agreesWithTool": false,
+    "notes": "False positive, and the advisory itself says so: 'the default parameterLimit of 1000 effectively mitigates the DoS scenario... risk increases only when parameterLimit is explicitly set to a very high value.' Neither app overrides parameterLimit or arrayLimit anywhere. Same wrong verdict occurred independently in both repos."
+  },
+  {
+    "cveId": "GHSA-4vj7-5mj6-jm8m",
+    "repoName": "node-express-mongoose-master",
+    "packageName": "morgan",
+    "toolReachabilityVerdict": "reachable",
+    "toolAgentVerdict": "exploitable",
+    "toolConfidence": 0.9,
+    "groundTruthVerdict": "exploitable",
+    "verificationMethod": "read config/express.js's morgan(log) call and morgan/index.js source directly (line 63 fallback logic, line 164 'default' format definition)",
+    "agreesWithTool": true,
+    "notes": "Confirmed via a subtler mechanism than the tool found: outside development, log = {stream:{...}} has no .format property, so morgan falls back to fmt = opts.format || 'default', and the 'default' format string does include :remote-user. Dev mode uses 'dev' format instead, which is safe. Tool's citation was generic and never traced this app-specific fallback."
+  },
+  {
+    "cveId": "GHSA-664h-wqgq-64gw",
+    "repoName": "node-express-mongoose-master",
+    "packageName": "mongoose",
+    "toolReachabilityVerdict": "reachable",
+    "toolAgentVerdict": "not-exploitable",
+    "toolConfidence": 0.95,
+    "groundTruthVerdict": "not-exploitable",
+    "verificationMethod": "grepped entire app codebase (excluding node_modules) for updateOne/findOneAndUpdate/.update( — zero matches",
+    "agreesWithTool": true,
+    "notes": "Confirmed more strongly than the tool's own evidence — it cited an unrelated mongoose.model('User') registration call. The actual vulnerable pattern (Model.updateOne(filter, req.body)) doesn't occur anywhere in this app."
+  },
+  {
+    "cveId": "GHSA-pxg6-pf52-xh8x",
+    "repoName": "node-express-mongoose-master",
+    "packageName": "cookie",
+    "toolReachabilityVerdict": "reachable",
+    "toolAgentVerdict": "not-exploitable (x3) / insufficient-evidence (x1, hit 8-step cap)",
+    "toolConfidence": 0.95,
+    "groundTruthVerdict": "not-exploitable",
+    "verificationMethod": "traced every real usage of the cookie package in this app: cookie-parser (.parse only), csurf and express-session (serialize with hardcoded/internal values)",
+    "agreesWithTool": true,
+    "notes": "No usage anywhere passes user-supplied values into cookie.serialize()'s name/path/domain fields. The step-cap run was redundant re-investigation of the same conclusion, not genuine ambiguity."
+  }
+]
