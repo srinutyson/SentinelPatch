@@ -43,8 +43,8 @@ function stripCodeFences(text) {
     return fenceMatch ? fenceMatch[1] : trimmed;
 }
 
-async function buildInitialContents(finding){
-      const relevantChunks = await retrieveRelevantChunks(finding.repoName, finding.cveId, 'How is this vulnerability typically exploited, and under what conditions?', 3);
+async function buildInitialContents(finding, ctx){
+      const relevantChunks = await retrieveRelevantChunks(ctx, finding.cveId, 'How is this vulnerability typically exploited, and under what conditions?', 3);
 
      const parts = [
           {text : SYSTEM_INSTRUCTION},
@@ -78,12 +78,12 @@ async function callGeminiOnce(contents){
                 },
           });
 
-          return response ; 
+          return response ;
 }
 
 function insufficientEvidenceVerdict(cveId , reasoning){
      return {
-          cveId , 
+          cveId ,
           verdict : 'insufficient-evidence',
           confidence : 0,
           reasoning ,
@@ -93,6 +93,7 @@ function insufficientEvidenceVerdict(cveId , reasoning){
 
 const AgentState = Annotation.Root({
     finding : Annotation(),
+    ctx : Annotation(),
     contents : Annotation({
          reducer : (state , update) =>state.concat(update),
          default : () => [],
@@ -137,14 +138,14 @@ function executeToolNode(state){
 
      const {name ,  args , id} = functionCallPart.functionCall;
      console.log(`  Step tool call: ${name}(${JSON.stringify(args)})`);
-     const repoName = state.finding.repoName;
+     const ctx = state.ctx;
 
      let result ;
      if(name === 'readSourceLines'){
-          result = readSourceLines(repoName , args.filePath , args.startLine , args.endLine,args.contextLines); 
+          result = readSourceLines(ctx , args.filePath , args.startLine , args.endLine,args.contextLines);
      }
      else if(name === 'readFunctionBody'){
-         result = readFunctionBody(repoName , {
+         result = readFunctionBody(ctx , {
              file : args.file,
              startLine : args.startLine,
              endLine : args.endLine,
@@ -161,7 +162,7 @@ function executeToolNode(state){
                  parts : [
                      {
                         functionResponse :{
-                            name , 
+                            name ,
                             response : {result},
                             id,
                         }
@@ -207,7 +208,7 @@ function finalVerdictNode(state){
             ),
         };
     }
-    
+
     return {verdict : result.data};
 
 }
@@ -238,11 +239,12 @@ const graph = new StateGraph(AgentState)
 
 const compiledGraph = graph.compile();
 
-export async function runFindingThroughAgent(finding){
+export async function runFindingThroughAgent(finding, ctx){
       const finalState = await compiledGraph.invoke(
            {
             finding,
-            contents : await buildInitialContents(finding),
+            ctx,
+            contents : await buildInitialContents(finding, ctx),
             stepCount : 0,
             verdict : null,
            },
@@ -251,7 +253,3 @@ export async function runFindingThroughAgent(finding){
 
       return finalState.verdict;
 }
-
-
-
-
