@@ -1,10 +1,7 @@
 import 'dotenv/config';
 import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { resolveScanContext, ensureOutputDirs } from './projectPaths.js';
 
 const ai = new GoogleGenAI({ apiKey : process.env.GEMINI_API_KEY});
 
@@ -42,16 +39,16 @@ async function embedChunks(chunks){
        return response.embeddings.map((embedding) => embedding.values);
 }
 
-function loadVulnerabilityReport(repoName) {
-    const reportPath = path.join(__dirname, '..', `vulnerabilities-${repoName}.json`);
-    if (!fs.existsSync(reportPath)) {
-        throw new Error(`No vulnerability report found at ${reportPath} — run: node scripts/queryVulnerabilities.js ${repoName}`);
+function loadVulnerabilityReport(ctx) {
+    if (!fs.existsSync(ctx.vulnerabilitiesPath)) {
+        throw new Error(`No vulnerability report found at ${ctx.vulnerabilitiesPath} — run the vulnerability query step first.`);
     }
-    return JSON.parse(fs.readFileSync(reportPath, 'utf-8'));
+    return JSON.parse(fs.readFileSync(ctx.vulnerabilitiesPath, 'utf-8'));
 }
 
-export async function embedAdvisoriesForRepo(repoName){
-      const report = loadVulnerabilityReport(repoName);
+export async function embedAdvisoriesForRepo(ctx){
+      ensureOutputDirs(ctx);
+      const report = loadVulnerabilityReport(ctx);
       const vulnerablePackages = report.filter((entry) => entry.vulnerabilities && entry.vulnerabilities.length > 0);
 
       const records = [];
@@ -75,13 +72,14 @@ export async function embedAdvisoriesForRepo(repoName){
            }
       }
 
-      const outputPath = path.join(__dirname, '..', `embeddings-${repoName}.json`);
-    fs.writeFileSync(outputPath, JSON.stringify(records, null, 2));
-    console.log(`Wrote ${records.length} chunk embedding(s) to ${outputPath}`);
+    fs.writeFileSync(ctx.embeddingsPath, JSON.stringify(records, null, 2));
+    console.log(`Wrote ${records.length} chunk embedding(s) to ${ctx.embeddingsPath}`);
 
     return records;
 }
 
-
-const repoName = process.argv[2] || 'vuln-fixture';
-embedAdvisoriesForRepo(repoName);
+if (import.meta.url === `file://${process.argv[1]}`) {
+    const repoPathArg = process.argv[2] || 'target-repos/vuln-fixture';
+    const ctx = resolveScanContext(repoPathArg);
+    await embedAdvisoriesForRepo(ctx);
+}
