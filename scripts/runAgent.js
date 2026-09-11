@@ -1,12 +1,7 @@
 import fs from 'fs';
-import { fileURLToPath } from 'url';
-import path from 'path';
-import 'dotenv/config';
 import { runFindingThroughAgent } from "./agentGraphs.js";
 import { generateFindings , generateUnresolvedFindings } from "./agentSchemas.js";
-
-const repoName = process.argv[2] || 'vuln-fixture';
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { resolveScanContext, ensureOutputDirs } from "./projectPaths.js";
 
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -14,20 +9,21 @@ function sleep(ms) {
 
 const DELAY_BETWEEN_FINDINGS_MS = 60000;
 
-async function runAgentOnRepo(repoName){
-    const findings = generateFindings(repoName);
-    const unresolved = generateUnresolvedFindings(repoName);
+export async function runAgentOnRepo(ctx){
+    ensureOutputDirs(ctx);
+    const findings = generateFindings(ctx);
+    const unresolved = generateUnresolvedFindings(ctx);
 
-    console.log(`\nRunning agent on ${findings.length} finding(s) for ${repoName}...`);
+    console.log(`\nRunning agent on ${findings.length} finding(s) for ${ctx.projectId}...`);
 
     const verdicts = [];
 
     for(let i = 0 ; i<findings.length ; i++){
         const finding = findings[i];
          console.log(`\n[${i + 1}/${findings.length}] Investigating ${finding.cveId} (${finding.packageName}) from ${finding.entryPointFile}...`);
-        
+
          try{
-            const verdict = await runFindingThroughAgent(finding);
+            const verdict = await runFindingThroughAgent(finding, ctx);
             verdicts.push(verdict);
               console.log(`  -> ${verdict.verdict} (confidence ${verdict.confidence})`);
          }catch(error){
@@ -52,18 +48,21 @@ async function runAgentOnRepo(repoName){
     }
 
     const output = {
-          repoName ,
+          projectId: ctx.projectId,
+          repoPath: ctx.repoPath,
           generatedAt: new Date().toISOString(),
           verdicts,
           unresolved,
     }
 
-     const outputPath = path.join(__dirname, '..', `verdicts-${repoName}.json`);
-    fs.writeFileSync(outputPath, JSON.stringify(output, null, 2));
-    console.log(`\nWrote ${verdicts.length} verdict(s) and ${unresolved.length} unresolved case(s) to ${outputPath}`);
+    fs.writeFileSync(ctx.verdictsPath, JSON.stringify(output, null, 2));
+    console.log(`\nWrote ${verdicts.length} verdict(s) and ${unresolved.length} unresolved case(s) to ${ctx.verdictsPath}`);
 
     return output;
 }
 
-   
-    runAgentOnRepo(repoName);
+if (import.meta.url === `file://${process.argv[1]}`) {
+    const repoPathArg = process.argv[2] || 'target-repos/vuln-fixture';
+    const ctx = resolveScanContext(repoPathArg);
+    await runAgentOnRepo(ctx);
+}
