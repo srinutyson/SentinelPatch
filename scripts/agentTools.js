@@ -1,11 +1,8 @@
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-export function readSourceLines(repoName , filePath , startLine , endLine , contextLines = 5){
-     const absolutePath = path.join(__dirname , '..' , 'target-repos' , repoName , filePath);
+export function readSourceLines(ctx , filePath , startLine , endLine , contextLines = 5){
+     const absolutePath = path.join(ctx.repoPath , filePath);
      const source  = fs.readFileSync(absolutePath , 'utf-8');
      const lines = source.split('\n');
 
@@ -15,14 +12,11 @@ export function readSourceLines(repoName , filePath , startLine , endLine , cont
      const sliceLines = lines.slice(from , to);
 
      return sliceLines.map((line , i)=> `${i+from+1}: ${line}`) .join('\n');
-
 }
 
-
-export function readFunctionBody(repoName , location){
-       return readSourceLines(repoName , location.file , location.startLine , location.endLine , 0);
+export function readFunctionBody(ctx , location){
+       return readSourceLines(ctx , location.file , location.startLine , location.endLine , 0);
 }
-
 
 export const readSourceLinesDeclaration = {
     name: 'readSourceLines',
