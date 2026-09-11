@@ -46,7 +46,7 @@ function formatTable(summary){
             }
         }
     } else {
-        lines.push('Agent step skipped (--skip-agent) — reachability data only.');
+        lines.push('Agent step skipped (skipAgent option was set) — reachability data only.');
     }
     return lines.join('\n');
 }
@@ -73,7 +73,7 @@ function formatMarkdown(summary){
         }
     } else {
         lines.push('');
-        lines.push('_Agent step skipped (--skip-agent) — reachability data only._');
+        lines.push('_Agent step skipped (skipAgent option was set) — reachability data only._');
     }
     return lines.join('\n');
 }

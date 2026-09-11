@@ -1,8 +1,7 @@
 {
   "name": "sentinelpatch",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Determine which known CVEs in your Node.js dependencies are actually reachable and exploitable, using static call-graph analysis and an AI agent grounded in the real OSV advisory text.",
   "scripts": {
     "test": "node --experimental-vm-modules node_modules/.bin/jest",
     "test:agent": "node --experimental-vm-modules node_modules/.bin/jest --config jest.agent.config.js"
@@ -16,14 +15,19 @@
     "@langchain/langgraph": "^1.4.14",
     "acorn": "^8.18.0",
     "acorn-walk": "^8.3.5",
-    "commander": "^15.0.0",
     "dotenv": "^17.4.2",
     "zod": "^4.5.4"
   },
   "devDependencies": {
     "jest": "^30.5.1"
   },
-  "bin": {
-    "sentinelpatch": "./bin/cli.js"
-  }
+  "files": [
+    "index.js",
+    "scripts",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "index.js"
 }
