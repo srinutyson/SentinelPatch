@@ -1,38 +1,6 @@
 import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { getDependencies } from "./extractDependencies.js";
-
-
-
-// async function queryOSV(name , version){
-//       try{
-
-//           const response =  await fetch('https://api.osv.dev/v1/query' , {
-//          method : 'POST',
-//        headers :  {"Content-Type" : "application/json"},
-//          body : JSON.stringify({
-//                 package : {
-//                      name : name,
-//                      ecosystem : 'npm'
-//                 },
-//                 version : version,
-//          }),
-//       });
-//          if(!response.ok){
-//              console.error(`OSV query failed for ${name}@${version}:  HTTP ${response.status}`);
-//              return [];
-//          }
-
-//          const data =  await response.json()
-//          return data.vulns || [];
-//       }catch(error){
-//            console.error(`OSV query error for ${name}@${version}:`, error.message);
-//            return [];
-//       }
-
-    
-// }
+import { resolveScanContext, ensureOutputDirs } from "./projectPaths.js";
 
 function simplifyvulns(vuln){
       return {
@@ -44,8 +12,8 @@ function simplifyvulns(vuln){
       };
 }
 
-export async function checkDependencies(reponame){
-    const dependencies = getDependencies(reponame);
+export async function checkDependencies(ctx){
+    const dependencies = getDependencies(ctx);
     const queryable = dependencies.filter((dep) => dep.version);
     const skipped = dependencies.filter((dep) => !dep.version);
 
@@ -54,7 +22,7 @@ export async function checkDependencies(reponame){
     }
 
     const vulnListsByIndex = await queryOSVBatch(queryable);
-    
+
     const uniqueIds = new Set();
     for (const vulnList of vulnListsByIndex) {
         for (const v of vulnList) {
@@ -69,7 +37,7 @@ export async function checkDependencies(reponame){
             detailsCache.set(id, simplifyvulns(full));
         }
     }
-    
+
     const results = queryable.map((dep, i) => {
         const idsForThisDep = vulnListsByIndex[i].map((v) => v.id);
         const vulnerabilities = idsForThisDep
@@ -85,6 +53,7 @@ export async function checkDependencies(reponame){
 
     return results;
 }
+
 export async function queryOSVBatch(dependencies){
        const queryable = dependencies.filter((dep)=>dep.version);
        const queries = queryable.map((dep)=>({
@@ -125,20 +94,20 @@ async function getVulnDetails(id){
         }
         catch(error){
              console.error(`Error fetching details for ${id}:`, error.message);
-             return null;  
+             return null;
         }
 }
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-async function writeVulnerabilityReport(reponame){
-      const results = await checkDependencies(reponame);
-      const outPath = path.join(__dirname , '..' , `vulnerabilities-${reponame}.json`);
-      fs.writeFileSync(outPath , JSON.stringify(results , null , 2));
-       console.log(`Wrote vulnerability report for ${reponame} to ${outPath}`);
-       return results;
+export async function writeVulnerabilityReport(ctx){
+      ensureOutputDirs(ctx);
+      const results = await checkDependencies(ctx);
+      fs.writeFileSync(ctx.vulnerabilitiesPath , JSON.stringify(results , null , 2));
+      console.log(`Wrote vulnerability report for ${ctx.projectId} to ${ctx.vulnerabilitiesPath}`);
+      return results;
 }
 
-
-const reponame = process.argv[2] || 'hackathon-starter';
-await writeVulnerabilityReport(reponame);
+if (import.meta.url === `file://${process.argv[1]}`) {
+    const repoPathArg = process.argv[2] || 'target-repos/hackathon-starter';
+    const ctx = resolveScanContext(repoPathArg);
+    await writeVulnerabilityReport(ctx);
+}
