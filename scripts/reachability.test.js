@@ -2,14 +2,14 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {
-      buildAdjacencyMap , 
+      buildAdjacencyMap ,
       isReachable,
       findReachablePath,
       getFileIndicesForPaths,
       getFunctionsInFiles,
       checkReachability
 } from './reachability.js';
-
+import { resolveScanContext } from './projectPaths.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -97,7 +97,8 @@ describe('getFileIndicesForPaths', () => {
 describe('checkReachability — integration test on the real vuln-fixture call graph', () => {
     test('confirms the known real positive case: lodash prototype pollution reachable via app.js -> routes/merge.js -> lodash.js', () => {
         const callGraphPath = path.join(__dirname, '..', 'callgraphs', 'vuln-fixture__app.json');
-        const result = checkReachability(callGraphPath, 'lodash', '4.17.15', 'vuln-fixture');
+        const ctx = resolveScanContext(path.join(__dirname, '..', 'target-repos', 'vuln-fixture'));
+        const result = checkReachability(callGraphPath, 'lodash', '4.17.15', ctx);
 
         expect(result.reachable).toBe(true);
         expect(result.status).toBe('reachable');
