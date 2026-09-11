@@ -1,9 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
-
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function getInstalledVersionAtPath(absoluteFilePath, packageName){
     const marker = `node_modules/${packageName}/`;
@@ -40,8 +36,6 @@ export function getVulnerablePackageFileIndices(callGraph , packageName,expected
        });
 
        return indices;
-
-       
 }
 
 export function getFunctionsInFiles(callGraph , fileIndices){
@@ -54,10 +48,8 @@ export function getFunctionsInFiles(callGraph , fileIndices){
         if(fileIndices.has(fileIdx)){
              matchedFuncIds.add(Number(funcId));
         }
-
      }
      return matchedFuncIds;
-     
 }
 
 export function getFileIndicesForPaths(callGraph, paths){
@@ -85,7 +77,6 @@ export function buildAdjacencyMap(fun2fun){
 
 export function isReachable(startFuncIds , targetFuncIds , adjacencyMap){
        const queue = [...startFuncIds];
-     
        const visited = new Set(startFuncIds);
 
        while(queue.length > 0){
@@ -97,7 +88,6 @@ export function isReachable(startFuncIds , targetFuncIds , adjacencyMap){
                  visited.add(callee);
                  queue.push(callee);
             }
-
        }
        return false;
 }
@@ -121,7 +111,6 @@ export function findReachablePath(startFuncIds , targetFuncIds , adjacencyMap){
             const current = queue.shift();
             if(targetFuncIds.has(current)) {
                return pathReconstruction(current , parentMap);
-               
             }
             const callees = adjacencyMap.get(current) || [];
             for(const callee of callees){
@@ -130,11 +119,10 @@ export function findReachablePath(startFuncIds , targetFuncIds , adjacencyMap){
                  queue.push(callee);
                  parentMap.set(callee , current);
             }
-
        }
        return null;
-
 }
+
 const callGraphCache = new Map();
 
 function loadCallGraphData(callGraphPath){
@@ -152,10 +140,10 @@ function loadCallGraphData(callGraphPath){
     return data;
 }
 
-export function checkReachability(callGraphPath , packageName,packageVersion ,repoName){
+export function checkReachability(callGraphPath , packageName,packageVersion ,ctx){
        const { callGraph , entryFunIndices , adjacencyMap } = loadCallGraphData(callGraphPath);
 
-       const repoRootDir = path.join(__dirname , '..' , 'target-repos' , repoName);
+       const repoRootDir = ctx.repoPath;
        const vulnerableFileIndices = getVulnerablePackageFileIndices(callGraph , packageName , packageVersion , repoRootDir);
        const vulnerableFunIndices = getFunctionsInFiles(callGraph , vulnerableFileIndices);
 
@@ -165,23 +153,21 @@ export function checkReachability(callGraphPath , packageName,packageVersion ,re
            return { reachable: true , status: 'reachable' , path: reachablePaths };
        }
 
-       if(hasIncompleteCoverage(repoName)){
+       if(hasIncompleteCoverage(ctx)){
            return { reachable: false , status: 'inconclusive' , path: null };
        }
 
        return { reachable: false , status: 'not-reachable' , path: null };
 }
 
-export function checkReachabilityForRepo(repoName , packageName , packageVersion){
-       const callGraphDirectory = path.join(__dirname , '..' , 'callgraphs');
-              const callGraphsNames  = (fs.readdirSync(callGraphDirectory)).filter((callGraph)=>
-                             callGraph.startsWith(`${repoName}__`) &&
-                             callGraph.endsWith('.json') &&
-                             !callGraph.endsWith('__coverage.json')
-                            );
+export function checkReachabilityForRepo(ctx , packageName , packageVersion){
+       if(!fs.existsSync(ctx.callGraphsDir)){
+           return [];
+       }
+       const callGraphsNames = fs.readdirSync(ctx.callGraphsDir).filter((filename)=> filename.endsWith('.json'));
        const results =  callGraphsNames.map((filename)=>{
-                         const fullPath = path.join(callGraphDirectory , filename);
-                         const result = checkReachability(fullPath , packageName , packageVersion , repoName);
+                         const fullPath = path.join(ctx.callGraphsDir , filename);
+                         const result = checkReachability(fullPath , packageName , packageVersion , ctx);
 
                          return {
                              entryPoint : filename,
@@ -193,16 +179,15 @@ export function checkReachabilityForRepo(repoName , packageName , packageVersion
        return results;
 }
 
-function loadCoverageReport(repoName){
-    const coveragePath = path.join(__dirname , '..' , 'callgraphs' , `${repoName}__coverage.json`);
-    if(!fs.existsSync(coveragePath)){
-        return null; 
+function loadCoverageReport(ctx){
+    if(!fs.existsSync(ctx.coveragePath)){
+        return null;
     }
-    return JSON.parse(fs.readFileSync(coveragePath , 'utf8'));
+    return JSON.parse(fs.readFileSync(ctx.coveragePath , 'utf8'));
 }
 
-function hasIncompleteCoverage(repoName){
-    const coverage = loadCoverageReport(repoName);
+function hasIncompleteCoverage(ctx){
+    const coverage = loadCoverageReport(ctx);
     if(coverage === null) return false;
     return coverage.some((entry) => entry.status === 'failed');
 }
